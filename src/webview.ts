@@ -3,13 +3,12 @@ import { Table } from 'apache-arrow';
 import { csvLoader } from './loaders/csvLoader';
 import { arrowLoader } from './loaders/arrowLoader';
 import { parquetLoader } from './loaders/parquetLoader';
-import { sqliteLoader } from './loaders/sqliteLoader';
 import { DataLoader } from './loaders/types';
 import { buildDefaultQuery } from './utils/sqlHelpers';
 
 declare const acquireVsCodeApi: any;
 const vscode = acquireVsCodeApi();
-const btoa = self.btoa;
+
 // Get UI elements
 const status = document.getElementById('status');
 const controls = document.getElementById('controls');
@@ -41,7 +40,7 @@ let globalFilter = '';
 let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex: -1, direction: null };
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
-const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, sqliteLoader, csvLoader];
+const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
 
 // --- Event Listeners (Moved to top) ---
 
