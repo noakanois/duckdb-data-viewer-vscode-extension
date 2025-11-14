@@ -1,31 +1,21 @@
 //@ts-check
-
 'use strict';
 
 const path = require('path');
+const CopyPlugin = require('copy-webpack-plugin');
 
 //@ts-check
 /** @typedef {import('webpack').Configuration} WebpackConfig **/
 
 /** @type WebpackConfig */
-const extensionConfig = {
-  target: 'node', // VS Code extensions run in a Node.js-context 📖 -> https://webpack.js.org/configuration/node/
-	mode: 'none', // this leaves the source code as close as possible to the original (when packaging we set this to 'production')
-
-  entry: './src/extension.ts', // the entry point of this extension, 📖 -> https://webpack.js.org/configuration/entry-context/
-  output: {
-    // the bundle is stored in the 'dist' folder (check package.json), 📖 -> https://webpack.js.org/configuration/output/
-    path: path.resolve(__dirname, 'dist'),
-    filename: 'extension.js',
-    libraryTarget: 'commonjs2'
-  },
-  externals: {
-    vscode: 'commonjs vscode' // the vscode-module is created on-the-fly and must be excluded. Add other modules that cannot be webpack'ed, 📖 -> https://webpack.js.org/configuration/externals/
-    // modules added here also need to be added in the .vscodeignore file
+const baseConfig = {
+  mode: 'none',
+  devtool: 'nosources-source-map',
+  infrastructureLogging: {
+    level: 'log', // enables logging required for problem matchers
   },
   resolve: {
-    // support reading TypeScript and JavaScript files, 📖 -> https://github.com/TypeStrong/ts-loader
-    extensions: ['.ts', '.js']
+    extensions: ['.ts', '.js'],
   },
   module: {
     rules: [
@@ -34,15 +24,58 @@ const extensionConfig = {
         exclude: /node_modules/,
         use: [
           {
-            loader: 'ts-loader'
-          }
-        ]
-      }
-    ]
-  },
-  devtool: 'nosources-source-map',
-  infrastructureLogging: {
-    level: "log", // enables logging required for problem matchers
+            loader: 'ts-loader',
+          },
+        ],
+      },
+    ],
   },
 };
-module.exports = [ extensionConfig ];
+
+/** @type WebpackConfig */
+const extensionConfig = {
+  ...baseConfig,
+  target: 'node', // <-- This is for the extension
+  entry: {
+    extension: './src/extension.ts',
+  },
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: '[name].js',
+    libraryTarget: 'commonjs2',
+  },
+  externals: {
+    vscode: 'commonjs vscode', // The 'vscode' module is special
+  },
+  plugins: [
+    // Copy DuckDB assets
+    new CopyPlugin({
+      patterns: [
+        {
+          from: 'node_modules/@duckdb/duckdb-wasm/dist/*.{wasm,worker.js}',
+          to: '[name][ext]',
+        },
+        {
+          from: 'node_modules/@vscode/webview-ui-toolkit/dist/toolkit.js',
+          to: 'toolkit.js', // This copies it to dist/toolkit.js
+        },
+      ],
+    }),
+  ],
+};
+
+/** @type WebpackConfig */
+const webviewConfig = {
+  ...baseConfig,
+  target: 'web', // <-- This is for the webview
+  entry: {
+    webview: './src/webview.ts',
+  },
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: '[name].js',
+  },
+};
+
+// Export both configurations
+module.exports = [extensionConfig, webviewConfig];

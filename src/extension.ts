@@ -1,26 +1,124 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import * as path from 'path';
+import { promises as fs } from 'fs';
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+// The new command ID from package.json
+const COMMAND_ID = 'duckdb-viewer.viewFile';
+
 export function activate(context: vscode.ExtensionContext) {
+  
+  // The command now receives a 'uri' from the right-click menu
+  let disposable = vscode.commands.registerCommand(COMMAND_ID, async (uri: vscode.Uri) => {
+    
+    // Handle if the command is run without a file
+    if (!uri) {
+      vscode.window.showWarningMessage("Please right-click a file from the explorer to use this command.");
+      return;
+    }
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "duckdb-data-viewer" is now active!');
+    const fileName = path.basename(uri.fsPath);
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('duckdb-data-viewer.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from DuckDB Data Viewer!');
-	});
+    const panel = vscode.window.createWebviewPanel(
+      'duckdbDataViewer',
+      `DuckDB: ${fileName}`, // Panel title
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')]
+      }
+    );
 
-	context.subscriptions.push(disposable);
+    panel.webview.html = await getWebviewHtml(context, panel.webview);
+
+    // This is our 2-stage handshake
+    panel.webview.onDidReceiveMessage(
+      async (message) => {
+        // Step 1: Webview is ready, send the assets
+        if (message.command === 'ready') {
+          try {
+            const bundles = await prepareDuckDBBundles(context, panel.webview);
+            panel.webview.postMessage({ command: 'init', bundles });
+          } catch (e) {
+            panel.webview.postMessage({ 
+              command: 'error', 
+              message: e instanceof Error ? e.message : String(e) 
+            });
+          }
+        }
+        
+        // Step 2: DuckDB is initialized, send the file data
+        if (message.command === 'duckdb-ready') {
+          try {
+            const fileBytes = await vscode.workspace.fs.readFile(uri);
+            panel.webview.postMessage({
+              command: 'loadFile',
+              fileName: fileName,
+              fileData: fileBytes
+            });
+          } catch (e) {
+             panel.webview.postMessage({ 
+              command: 'error', 
+              message: e instanceof Error ? `Failed to read file: ${e.message}` : String(e) 
+            });
+          }
+        }
+      },
+      undefined,
+      context.subscriptions
+    );
+  });
+
+  context.subscriptions.push(disposable);
 }
 
-// This method is called when your extension is deactivated
+// Helper to read a worker file from dist into a string
+async function readWorkerSource(context: vscode.ExtensionContext, fileName: string): Promise<string> {
+  const workerUri = vscode.Uri.joinPath(context.extensionUri, 'dist', fileName);
+  const workerBytes = await vscode.workspace.fs.readFile(workerUri);
+  return new TextDecoder().decode(workerBytes);
+}
+
+// Prepare all asset paths and worker source code
+async function prepareDuckDBBundles(context: vscode.ExtensionContext, webview: vscode.Webview) {
+  const mvpWasmUrl = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'dist', 'duckdb-mvp.wasm')).toString();
+  const ehWasmUrl = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'dist', 'duckdb-eh.wasm')).toString();
+  const mvpWorkerSource = await readWorkerSource(context, 'duckdb-browser-mvp.worker.js');
+  const ehWorkerSource = await readWorkerSource(context, 'duckdb-browser-eh.worker.js');
+
+  return {
+    mvp: {
+      mainModule: mvpWasmUrl,
+      mainWorker: mvpWorkerSource,
+    },
+    eh: {
+      mainModule: ehWasmUrl,
+      mainWorker: ehWorkerSource,
+    },
+  };
+}
+
+// Reads the HTML template from disk
+async function getWebviewHtml(context: vscode.ExtensionContext, webview: vscode.Webview): Promise<string> {
+  const htmlPath = vscode.Uri.joinPath(context.extensionUri, 'src', 'webview.html');
+  const template = await vscode.workspace.fs.readFile(htmlPath);
+  const nonce = generateNonce();
+  const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview.js'));
+  const toolkitUri = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'dist', 'toolkit.js'));
+
+  return new TextDecoder().decode(template)
+    .replace(/{{nonce}}/g, nonce)
+    .replace(/{{csp_source}}/g, webview.cspSource)
+    .replace(/{{webview_script_uri}}/g, scriptUri.toString())
+    .replace(/{{toolkit_uri}}/g, toolkitUri.toString());
+}
+
+function generateNonce(): string {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+}
+
 export function deactivate() {}
