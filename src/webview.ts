@@ -1,9 +1,15 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
 import { Table } from 'apache-arrow';
+import { csvLoader } from './loaders/csvLoader';
+import { arrowLoader } from './loaders/arrowLoader';
+import { parquetLoader } from './loaders/parquetLoader';
+import { sqliteLoader } from './loaders/sqliteLoader';
+import { DataLoader } from './loaders/types';
+import { buildDefaultQuery } from './utils/sqlHelpers';
 
 declare const acquireVsCodeApi: any;
 const vscode = acquireVsCodeApi();
-
+const btoa = self.btoa;
 // Get UI elements
 const status = document.getElementById('status');
 const controls = document.getElementById('controls');
@@ -29,25 +35,22 @@ interface TableData {
 
 let db: duckdb.AsyncDuckDB | null = null;
 let connection: duckdb.AsyncDuckDBConnection | null = null;
-let viewName = 'my_data';
 let currentTableData: TableData | null = null;
 let columnFilters: string[] = [];
 let globalFilter = '';
 let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex: -1, direction: null };
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
+const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, sqliteLoader, csvLoader];
 
 // --- Event Listeners (Moved to top) ---
 
 // Listen for messages from the extension
 window.addEventListener('message', (event: any) => {
   const message = event.data;
-  console.log('[Webview] Received message:', message.command); // DEBUG
-  
   if (message.command === 'init') {
-    bootstrapDuckDB(message.bundles);
+    bootstrapDuckDB(message.bundles).catch(reportError);
   } else if (message.command === 'loadFile') {
-    console.log('[Debug] Received fileData:', message.fileData); // DEBUG
     handleFileLoad(message.fileName, message.fileData).catch(reportError);
   } else if (message.command === 'error') {
     reportError(message.message);
@@ -138,6 +141,10 @@ async function bootstrapDuckDB(bundles: duckdb.DuckDBBundles) {
     updateStatus('Connecting to DuckDB...');
     connection = await db.connect();
     
+    updateStatus('Installing extensions...');
+    await connection.query("INSTALL parquet; LOAD parquet;");
+    await connection.query("INSTALL sqlite; LOAD sqlite;");
+  
     updateStatus('DuckDB ready. Waiting for file data…');
     vscode.postMessage({ command: 'duckdb-ready' });
 
@@ -148,78 +155,53 @@ async function bootstrapDuckDB(bundles: duckdb.DuckDBBundles) {
 
 async function handleFileLoad(fileName: string, fileData: any) {
   if (!db || !connection) {
-    throw new Error("DuckDB is not initialized.");
+    throw new Error('DuckDB is not initialized.');
   }
 
-  // 1. --- THIS IS THE FIX ---
-  // We must access the .data property of the received object
-  const fileBytes = new Uint8Array(fileData.data);
-  // -------------------------
-  
-  // --- DEBUG LOGS ---
-  console.log(`[Debug] Reconstructed fileBytes. Size: ${fileBytes.length} bytes`);
+  const fileBytes = extractFileBytes(fileData);
   if (fileBytes.length === 0) {
-      reportError("File is empty (0 bytes).");
-      return;
+    throw new Error('File is empty (0 bytes).');
   }
-  const headerSnippet = new TextDecoder().decode(fileBytes.slice(0, 100));
-  console.log(`[Debug] File Header Snippet:\n${headerSnippet}`);
-  updateStatus(`File size: ${fileBytes.length} bytes. Header: ${headerSnippet.split('\n')[0]}`);
-  // ---
 
-  // 2. Register the file buffer
-  console.log(`[Debug] Registering file: ${fileName}`);
-  await db.registerFileBuffer(fileName, fileBytes); 
-  
-  // 3. --- NEW DEBUG STEP ---
-  let discoveredColumns: string[] = [];
-  try {
-    updateStatus('Analyzing CSV structure...');
-    const describeQuery = `DESCRIBE SELECT * FROM read_csv('${fileName}', header=true);`;
-    console.log(`[Debug] Running query: ${describeQuery}`);
-    
-    const describeResult = await connection.query(describeQuery);
-    const describeArray = describeResult.toArray();
-    console.log('[Debug] DESCRIBE query result:', describeArray);
+  const loader = selectLoader(fileName);
+  updateStatus(`Preparing ${loader.id.toUpperCase()} data for ${fileName}…`);
+  const loadResult = await loader.load(fileName, fileBytes, {
+    db,
+    connection,
+    updateStatus,
+  });
 
-    if (describeArray.length === 0) {
-      reportError(`DuckDB's read_csv could not find any columns.`);
-      return;
-    }
-    discoveredColumns = describeArray
-      .map((row: any) => row.column_name)
-      .filter((name: any): name is string => typeof name === 'string' && name.length > 0);
-
-  } catch (e) {
-    reportError(e);
-    return;
-  }
-  // --- END DEBUG STEP ---
-  
-  // 4. Create a view from the CSV file
-  viewName = generateViewName(fileName);
-  const viewIdentifier = formatIdentifierForSql(viewName);
-  const escapedFileName = fileName.replace(/'/g, "''");
-  updateStatus(`Creating view '${viewName}' from ${fileName}...`);
-  const createViewQuery = `
-    CREATE OR REPLACE TEMP VIEW ${viewIdentifier} AS 
-    SELECT * FROM read_csv('${escapedFileName}', header=true);
-  `;
-  console.log(`[Debug] Running query: ${createViewQuery}`);
-  await connection.query(createViewQuery);
-  
-  // 5. Set the default query to select from the VIEW
-  const defaultQuery = buildDefaultQuery(discoveredColumns, viewIdentifier);
+  const defaultQuery = buildDefaultQuery(loadResult.columns, loadResult.relationIdentifier);
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
-  
-  // 6. Show the UI
+
   if (controls) controls.style.display = 'flex';
   if (resultsContainer) resultsContainer.style.display = 'block';
 
-  // 7. Automatically run the default query
-  console.log(`[Debug] Running default query: ${defaultQuery}`);
   await runQuery(defaultQuery);
+}
+
+function selectLoader(fileName: string): DataLoader {
+  return DATA_LOADERS.find((loader) => loader.canLoad(fileName)) ?? csvLoader;
+}
+
+function extractFileBytes(fileData: any): Uint8Array {
+  if (fileData instanceof Uint8Array) {
+    return fileData;
+  }
+  if (fileData?.data instanceof ArrayBuffer) {
+    return new Uint8Array(fileData.data);
+  }
+  if (Array.isArray(fileData?.data)) {
+    return new Uint8Array(fileData.data);
+  }
+  if (fileData instanceof ArrayBuffer) {
+    return new Uint8Array(fileData);
+  }
+  if (fileData?.buffer instanceof ArrayBuffer) {
+    return new Uint8Array(fileData.buffer);
+  }
+  throw new Error('Unable to read file bytes from message.');
 }
 
 async function runQuery(sql: string) {
@@ -233,7 +215,6 @@ async function runQuery(sql: string) {
 
   try {
     const result = await connection.query(sql);
-    console.log('[Debug] Query result:', result.toArray());
     renderResults(result);
     
     // --- CHANGE ---
@@ -256,7 +237,6 @@ function renderResults(table: Table | null) {
   }
 
   if (!table || table.numRows === 0) {
-    console.log('[Debug] renderResults: Query returned no rows.');
     resultsContainer.innerHTML = '<div class="empty-state">Query completed. No rows returned.</div>';
     currentTableData = null;
     tableBodyElement = null;
@@ -459,11 +439,7 @@ function updateRowCount(visible: number, total: number) {
   if (!rowCountLabel) {
     return;
   }
-  if (total === 0) {
-    rowCountLabel.textContent = 'No rows to display.';
-    return;
-  }
-  rowCountLabel.textContent = `Showing ${visible.toLocaleString()} of ${total.toLocaleString()} rows`;
+  rowCountLabel.textContent = '';
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
@@ -506,34 +482,6 @@ function formatCell(value: any): string {
   return String(value);
 }
 
-function buildDefaultQuery(columnNames: string[], viewReference: string): string {
-  const columns = columnNames.length
-    ? columnNames.map(formatIdentifierForSql).join(', ')
-    : '*';
-  return `SELECT ${columns}\nFROM ${viewReference};`;
-}
-
-function generateViewName(fileName: string): string {
-  const baseName = fileName.split(/[\\/]/).pop() ?? fileName;
-  const withoutExtension = baseName.replace(/\.[^.]+$/, '');
-  let sanitized = withoutExtension.replace(/[^A-Za-z0-9_]/g, '_');
-  if (!sanitized) {
-    sanitized = 'data_view';
-  }
-  if (/^[0-9]/.test(sanitized)) {
-    sanitized = `v_${sanitized}`;
-  }
-  return sanitized;
-}
-
-function formatIdentifierForSql(identifier: string): string {
-  const simplePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
-  if (simplePattern.test(identifier)) {
-    return identifier;
-  }
-  return `"${identifier.replace(/"/g, '""')}"`;
-}
-
 // ---
 // Helpers
 // ---
@@ -562,7 +510,6 @@ function updateStatus(message: string) {
     status.textContent = message;
     status.classList.remove('error'); // Remove error style if it was there
   }
-  console.log(`[Status] ${message}`);
 }
 function reportError(e: any) {
   const message = e instanceof Error ? e.message : String(e);
