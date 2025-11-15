@@ -19,6 +19,11 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const snapshotButton = document.getElementById('snapshot-result') as HTMLButtonElement | null;
+const queryHistoryList = document.getElementById('query-history-list');
+const snapshotList = document.getElementById('snapshot-list');
+const hyperOutput = document.getElementById('hyper-output');
+const hyperActionButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.hyper-action'));
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -32,6 +37,50 @@ interface TableData {
   rows: TableRow[];
 }
 
+type ColumnCategory = 'numeric' | 'temporal' | 'boolean' | 'other';
+
+interface ColumnMetadata {
+  name: string;
+  type: string;
+  category: ColumnCategory;
+}
+
+interface ActiveRelation {
+  relationName: string;
+  relationIdentifier: string;
+  columns: string[];
+  metadata: ColumnMetadata[];
+}
+
+interface QueryHistoryEntry {
+  id: string;
+  sql: string;
+  timestamp: number;
+}
+
+interface SnapshotEntry {
+  id: string;
+  query: string;
+  timestamp: number;
+  rowCount: number;
+  sample: string | null;
+  columns: string[];
+}
+
+interface ColumnProfileRow {
+  column_position: number;
+  column_name: string;
+  data_type: string;
+  total_rows: number;
+  null_count: number;
+  distinct_count: number;
+  dominant_value: any;
+  min_value: any;
+  max_value: any;
+  average_value: number | null;
+  truth_ratio: number | null;
+}
+
 let db: duckdb.AsyncDuckDB | null = null;
 let connection: duckdb.AsyncDuckDBConnection | null = null;
 let duckdbInitializationPromise: Promise<void> | null = null;
@@ -41,7 +90,14 @@ let globalFilter = '';
 let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex: -1, direction: null };
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
+let activeRelation: ActiveRelation | null = null;
+let queryHistory: QueryHistoryEntry[] = [];
+let snapshots: SnapshotEntry[] = [];
+let lastExecutedQuery = '';
+let cachedProfile: ColumnProfileRow[] | null = null;
 const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
+const MAX_HISTORY_ENTRIES = 30;
+const MAX_SNAPSHOTS = 12;
 
 // --- Event Listeners (Moved to top) ---
 
@@ -96,6 +152,23 @@ if (copySqlButton) {
     }
   });
 }
+
+if (snapshotButton) {
+  snapshotButton.addEventListener('click', () => {
+    try {
+      captureSnapshot();
+    } catch (err) {
+      reportError(err);
+    }
+  });
+}
+
+hyperActionButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const action = button.dataset.action ?? '';
+    handleHyperAction(action, button).catch(reportError);
+  });
+});
 
 // --- Core Functions ---
 
@@ -188,12 +261,31 @@ async function handleFileLoad(fileName: string, fileData: any) {
     updateStatus,
   });
 
+  const metadata = await introspectColumnMetadata(loadResult.relationName, loadResult.columns);
+  activeRelation = {
+    relationName: loadResult.relationName,
+    relationIdentifier: loadResult.relationIdentifier,
+    columns: loadResult.columns,
+    metadata,
+  };
+  cachedProfile = null;
+  queryHistory = [];
+  snapshots = [];
+  lastExecutedQuery = '';
+  updateQueryHistoryList();
+  updateSnapshotList();
+  renderHyperStatus(`Hyper actions primed for ${loadResult.relationName}.`, 'Fire a button above to unleash automated analysis.');
+
   const defaultQuery = buildDefaultQuery(loadResult.columns, loadResult.relationIdentifier);
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
 
-  if (controls) controls.style.display = 'flex';
-  if (resultsContainer) resultsContainer.style.display = 'block';
+  if (controls) {
+    controls.style.display = 'flex';
+  }
+  if (resultsContainer) {
+    resultsContainer.style.display = 'block';
+  }
 
   await runQuery(defaultQuery);
 }
@@ -233,7 +325,9 @@ async function runQuery(sql: string) {
   try {
     const result = await connection.query(sql);
     renderResults(result);
-    
+    lastExecutedQuery = sql;
+    recordQueryHistory(sql);
+
     // --- CHANGE ---
     // Hide the status bar on success
     if (statusWrapper) {
@@ -266,7 +360,9 @@ function renderResults(table: Table | null) {
 
   for (let i = 0; i < table.numRows; i++) {
     const row = table.get(i);
-    if (!row) continue;
+    if (!row) {
+      continue;
+    }
 
     const raw: any[] = [];
     const display: string[] = [];
@@ -366,7 +462,9 @@ function applyTableState() {
       }
     }
     return normalizedFilters.every((filter, idx) => {
-      if (!filter) return true;
+      if (!filter) {
+        return true;
+      }
       return (row.display[idx] ?? '').toLowerCase().includes(filter);
     });
   });
@@ -460,7 +558,9 @@ function updateRowCount(visible: number, total: number) {
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
-  if (a === b) return 0;
+  if (a === b) {
+    return 0;
+  }
 
   const aIsNumber = typeof a === 'number' && Number.isFinite(a);
   const bIsNumber = typeof b === 'number' && Number.isFinite(b);
@@ -497,6 +597,636 @@ function formatCell(value: any): string {
     }
   }
   return String(value);
+}
+
+function categorizeColumnType(type: string): ColumnCategory {
+  const normalized = type?.toLowerCase?.() ?? '';
+  if (/int|decimal|double|float|real|numeric|hugeint|smallint|tinyint|ubigint|uint|bigint/.test(normalized)) {
+    return 'numeric';
+  }
+  if (/timestamp|date|time|interval/.test(normalized)) {
+    return 'temporal';
+  }
+  if (/bool/.test(normalized)) {
+    return 'boolean';
+  }
+  return 'other';
+}
+
+function escapeSqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+async function introspectColumnMetadata(relationName: string, fallbackColumns: string[]): Promise<ColumnMetadata[]> {
+  if (!connection) {
+    return fallbackColumns.map((name) => ({ name, type: 'UNKNOWN', category: 'other' }));
+  }
+  try {
+    const escaped = relationName.replace(/'/g, "''");
+    const table = await connection.query(`PRAGMA table_info('${escaped}');`);
+    const rows = table.toArray() as any[];
+    const metadata = rows
+      .map((row) => {
+        const name: string | undefined = typeof row.name === 'string' ? row.name : typeof row.column_name === 'string' ? row.column_name : undefined;
+        if (!name || name.length === 0) {
+          return null;
+        }
+        const type: string = typeof row.type === 'string' ? row.type : typeof row.data_type === 'string' ? row.data_type : 'UNKNOWN';
+        return { name, type };
+      })
+      .filter((entry): entry is { name: string; type: string } => !!entry);
+
+    if (metadata.length === 0) {
+      return fallbackColumns.map((name) => ({ name, type: 'UNKNOWN', category: 'other' }));
+    }
+
+    return metadata.map(({ name, type }) => ({ name, type, category: categorizeColumnType(type) }));
+  } catch (error) {
+    console.warn('[Webview] Failed to introspect column metadata', error);
+    return fallbackColumns.map((name) => ({ name, type: 'UNKNOWN', category: 'other' }));
+  }
+}
+
+function generateStableId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function formatTimestamp(timestamp: number): string {
+  try {
+    return new Date(timestamp).toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch (error) {
+    console.warn('[Webview] Failed to format timestamp', error);
+    return new Date(timestamp).toISOString();
+  }
+}
+
+function recordQueryHistory(sql: string) {
+  const trimmed = sql.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  const existingIndex = queryHistory.findIndex((entry) => entry.sql === trimmed);
+  if (existingIndex !== -1) {
+    queryHistory.splice(existingIndex, 1);
+  }
+
+  queryHistory.unshift({
+    id: generateStableId('query'),
+    sql: trimmed,
+    timestamp: Date.now(),
+  });
+
+  if (queryHistory.length > MAX_HISTORY_ENTRIES) {
+    queryHistory = queryHistory.slice(0, MAX_HISTORY_ENTRIES);
+  }
+
+  updateQueryHistoryList();
+}
+
+function updateQueryHistoryList() {
+  if (!queryHistoryList) {
+    return;
+  }
+
+  if (queryHistory.length === 0) {
+    queryHistoryList.classList.add('empty');
+    queryHistoryList.textContent = 'Run a query to start the time machine.';
+    return;
+  }
+
+  queryHistoryList.classList.remove('empty');
+  queryHistoryList.innerHTML = '';
+
+  queryHistory.forEach((entry, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'history-entry';
+
+    const label = document.createElement('div');
+    label.className = 'history-entry__label';
+    label.textContent = `${index === 0 ? 'Latest' : `#${index + 1}`} • ${formatTimestamp(entry.timestamp)}`;
+
+    const sqlPreview = document.createElement('div');
+    sqlPreview.className = 'history-entry__sql';
+    sqlPreview.textContent = entry.sql.length > 600 ? `${entry.sql.slice(0, 597)}…` : entry.sql;
+
+    button.append(label, sqlPreview);
+    button.addEventListener('click', () => {
+      if (sqlInput) {
+        sqlInput.value = entry.sql;
+      }
+      runQuery(entry.sql).catch(reportError);
+    });
+
+    queryHistoryList.appendChild(button);
+  });
+}
+
+function captureSnapshot() {
+  if (!currentTableData || currentTableData.rows.length === 0) {
+    updateStatus('Run a query with results before capturing a snapshot.');
+    return;
+  }
+
+  if (!lastExecutedQuery.trim()) {
+    updateStatus('Execute a query before capturing a snapshot.');
+    return;
+  }
+
+  const entry: SnapshotEntry = {
+    id: generateStableId('snapshot'),
+    query: lastExecutedQuery,
+    timestamp: Date.now(),
+    rowCount: currentTableData.rows.length,
+    sample: currentTableData.rows[0]?.display.join(' | ') ?? null,
+    columns: [...currentTableData.columns],
+  };
+
+  snapshots = [entry, ...snapshots.filter((snapshot) => snapshot.query !== entry.query)];
+  if (snapshots.length > MAX_SNAPSHOTS) {
+    snapshots = snapshots.slice(0, MAX_SNAPSHOTS);
+  }
+
+  updateSnapshotList();
+  renderHyperStatus('Snapshot captured!', 'Find it in the list below to relaunch that query universe.');
+}
+
+function updateSnapshotList() {
+  if (!snapshotList) {
+    return;
+  }
+
+  if (snapshots.length === 0) {
+    snapshotList.classList.add('empty');
+    snapshotList.textContent = 'Capture a snapshot to anchor a data universe.';
+    return;
+  }
+
+  snapshotList.classList.remove('empty');
+  snapshotList.innerHTML = '';
+
+  snapshots.forEach((snapshot) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'snapshot-entry';
+
+    const title = document.createElement('div');
+    title.className = 'history-entry__label';
+    title.textContent = `${snapshot.columns.length} columns • ${formatTimestamp(snapshot.timestamp)}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'snapshot-entry__meta';
+    const rowsSpan = document.createElement('span');
+    rowsSpan.textContent = `${snapshot.rowCount.toLocaleString()} rows`;
+    const hintSpan = document.createElement('span');
+    hintSpan.textContent = 'Click to rerun';
+    meta.append(rowsSpan, hintSpan);
+
+    const sample = document.createElement('div');
+    sample.className = 'snapshot-entry__sample';
+    sample.textContent = snapshot.sample ? truncateForDisplay(snapshot.sample, 80) : 'No preview rows captured yet.';
+
+    button.append(title, meta, sample);
+    button.addEventListener('click', () => {
+      if (sqlInput) {
+        sqlInput.value = snapshot.query;
+      }
+      runQuery(snapshot.query).catch(reportError);
+    });
+
+    snapshotList.appendChild(button);
+  });
+}
+
+async function handleHyperAction(action: string, button: HTMLButtonElement) {
+  if (!activeRelation || !connection) {
+    renderHyperStatus('Load a dataset first.', 'The hyperdrive needs a table from your file to chew on.');
+    return;
+  }
+
+  if (!action) {
+    renderHyperStatus('Unknown hyper action.', 'That control has not been wired into the warp core yet.');
+    return;
+  }
+
+  button.disabled = true;
+
+  try {
+    if (action === 'profile') {
+      await runHyperProfile();
+      return;
+    }
+
+    if (action === 'nulls') {
+      await runNullHeatmap();
+      return;
+    }
+
+    if (action === 'duplicates') {
+      await launchDuplicateHunter();
+      return;
+    }
+
+    if (action === 'story') {
+      await runRowStory();
+      return;
+    }
+
+    renderHyperStatus(`Action '${action}' is still incubating.`, 'Ping the maintainers to wire it up.');
+  } catch (error) {
+    renderHyperError(error);
+    throw error;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function runHyperProfile() {
+  renderHyperStatus('Profiling columns…', 'Calculating dominant values, null storms, and averages in DuckDB.');
+  const profile = await computeColumnProfile();
+  cachedProfile = profile;
+  renderProfileResults(profile);
+}
+
+async function runNullHeatmap() {
+  renderHyperStatus('Measuring null storms…', 'Scanning every column for missing-value chaos.');
+  if (!cachedProfile) {
+    cachedProfile = await computeColumnProfile();
+  }
+  renderNullHeatmap(cachedProfile);
+}
+
+async function launchDuplicateHunter() {
+  if (!activeRelation) {
+    return;
+  }
+  const query = `
+    SELECT *, COUNT(*) AS __duplicate_count
+    FROM ${activeRelation.relationIdentifier}
+    GROUP BY ALL
+    HAVING COUNT(*) > 1
+    ORDER BY __duplicate_count DESC
+    LIMIT 200;
+  `.trim();
+
+  if (sqlInput) {
+    sqlInput.value = query;
+  }
+
+  renderHyperStatus('Duplicate hunter unleashed.', 'The main preview now lists suspect clusters with their duplicate counts.');
+  await runQuery(query);
+}
+
+async function runRowStory() {
+  if (!activeRelation || !connection) {
+    return;
+  }
+  renderHyperStatus('Sampling row stories…', 'Pulling a random cinematic slice of your table.');
+  const query = `SELECT * FROM ${activeRelation.relationIdentifier} USING SAMPLE 12 ROWS;`;
+  const table = await connection.query(query);
+  const columns = table.schema.fields.map((field) => field.name);
+  const rows: string[][] = [];
+  for (let i = 0; i < table.numRows; i++) {
+    const row = table.get(i) as Record<string, any> | null;
+    if (!row) {
+      continue;
+    }
+    rows.push(columns.map((column) => formatCell(row[column])));
+  }
+  renderHyperTable('Row Story Sampler', `Randomized ${rows.length} rows from ${activeRelation.relationName}.`, columns, rows);
+}
+
+async function computeColumnProfile(): Promise<ColumnProfileRow[]> {
+  if (!activeRelation || !connection) {
+    throw new Error('No active relation is ready for profiling yet.');
+  }
+
+  const metadata = activeRelation.metadata.length > 0
+    ? activeRelation.metadata
+    : activeRelation.columns.map((name) => ({ name, type: 'UNKNOWN', category: 'other' as ColumnCategory }));
+
+  const statements = metadata.map((meta, index) => {
+    const columnId = quoteIdentifier(meta.name);
+    const topValueQuery = `(
+      SELECT ${columnId}
+      FROM ${activeRelation.relationIdentifier}
+      WHERE ${columnId} IS NOT NULL
+      GROUP BY ${columnId}
+      ORDER BY COUNT(*) DESC
+      LIMIT 1
+    )`;
+    const minExpr = meta.category === 'numeric' || meta.category === 'temporal'
+      ? `MIN(${columnId})`
+      : `MIN(CAST(${columnId} AS VARCHAR))`;
+    const maxExpr = meta.category === 'numeric' || meta.category === 'temporal'
+      ? `MAX(${columnId})`
+      : `MAX(CAST(${columnId} AS VARCHAR))`;
+    const avgExpr = meta.category === 'numeric'
+      ? `AVG(TRY_CAST(${columnId} AS DOUBLE))`
+      : 'NULL';
+    const truthExpr = meta.category === 'boolean'
+      ? `AVG(CASE WHEN ${columnId} IS TRUE THEN 1 ELSE 0 END)`
+      : 'NULL';
+
+    return `SELECT
+      CAST(${index} AS INTEGER) AS column_position,
+      ${escapeSqlLiteral(meta.name)} AS column_name,
+      ${escapeSqlLiteral(meta.type)} AS data_type,
+      COUNT(*) AS total_rows,
+      SUM(CASE WHEN ${columnId} IS NULL THEN 1 ELSE 0 END) AS null_count,
+      COUNT(DISTINCT ${columnId}) AS distinct_count,
+      ${topValueQuery} AS dominant_value,
+      ${minExpr} AS min_value,
+      ${maxExpr} AS max_value,
+      ${avgExpr} AS average_value,
+      ${truthExpr} AS truth_ratio
+    FROM ${activeRelation.relationIdentifier}`;
+  });
+
+  const query = statements.join('\nUNION ALL\n');
+  const table = await connection.query(query);
+  const rows = table.toArray() as any[];
+
+  return rows
+    .map((row) => ({
+      column_position: typeof row.column_position === 'number' ? row.column_position : Number(row.column_position ?? 0) || 0,
+      column_name: String(row.column_name ?? row.COLUMN_NAME ?? ''),
+      data_type: String(row.data_type ?? row.DATA_TYPE ?? 'UNKNOWN'),
+      total_rows: typeof row.total_rows === 'number' ? row.total_rows : Number(row.total_rows ?? 0) || 0,
+      null_count: typeof row.null_count === 'number' ? row.null_count : Number(row.null_count ?? 0) || 0,
+      distinct_count: typeof row.distinct_count === 'number' ? row.distinct_count : Number(row.distinct_count ?? 0) || 0,
+      dominant_value: row.dominant_value ?? null,
+      min_value: row.min_value ?? null,
+      max_value: row.max_value ?? null,
+      average_value: typeof row.average_value === 'number'
+        ? row.average_value
+        : row.average_value !== null && row.average_value !== undefined
+          ? Number(row.average_value)
+          : null,
+      truth_ratio: typeof row.truth_ratio === 'number'
+        ? row.truth_ratio
+        : row.truth_ratio !== null && row.truth_ratio !== undefined
+          ? Number(row.truth_ratio)
+          : null,
+    }))
+    .sort((a, b) => a.column_position - b.column_position);
+}
+
+function renderProfileResults(rows: ColumnProfileRow[]) {
+  if (!hyperOutput) {
+    return;
+  }
+
+  if (rows.length === 0) {
+    renderHyperStatus('No profile statistics available.', 'The table appears to be empty.');
+    return;
+  }
+
+  hyperOutput.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.className = 'hyper-output__title';
+  title.textContent = `Column Profile (${rows.length} columns)`;
+
+  const description = document.createElement('div');
+  description.className = 'hyper-output__description';
+  description.textContent = 'Distinct counts, null storms, dominant values, and averages directly from DuckDB.';
+
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  const headings = ['Column', 'Type', 'Distinct', 'Nulls', 'Null %', 'Dominant', 'Min', 'Max', 'Average', 'Truth %'];
+  headings.forEach((heading) => {
+    const th = document.createElement('th');
+    th.textContent = heading;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    const nullRatio = row.total_rows > 0 ? row.null_count / row.total_rows : 0;
+    const cells = [
+      row.column_name,
+      row.data_type,
+      formatNumber(row.distinct_count),
+      formatNumber(row.null_count),
+      formatPercentage(nullRatio),
+      formatHyperValue(row.dominant_value),
+      formatHyperValue(row.min_value),
+      formatHyperValue(row.max_value),
+      row.average_value !== null && row.average_value !== undefined ? formatNumber(row.average_value, { maximumFractionDigits: 4 }) : '–',
+      row.truth_ratio !== null && row.truth_ratio !== undefined ? formatPercentage(row.truth_ratio) : '–',
+    ];
+    cells.forEach((value) => {
+      const td = document.createElement('td');
+      td.textContent = value;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  hyperOutput.append(title, description, table);
+}
+
+function renderNullHeatmap(rows: ColumnProfileRow[]) {
+  if (!hyperOutput) {
+    return;
+  }
+
+  hyperOutput.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.className = 'hyper-output__title';
+  title.textContent = 'Null Heatmap';
+
+  const description = document.createElement('div');
+  description.className = 'hyper-output__description';
+  description.textContent = 'Columns ordered by their percentage of missing values.';
+
+  const list = document.createElement('div');
+  list.className = 'null-heatmap';
+
+  let hasNulls = false;
+  [...rows]
+    .sort((a, b) => {
+      const ratioA = a.total_rows > 0 ? a.null_count / a.total_rows : 0;
+      const ratioB = b.total_rows > 0 ? b.null_count / b.total_rows : 0;
+      return ratioB - ratioA;
+    })
+    .forEach((row) => {
+      const ratio = row.total_rows > 0 ? row.null_count / row.total_rows : 0;
+      if (ratio > 0) {
+        hasNulls = true;
+      }
+      const item = document.createElement('div');
+      item.className = 'null-heatmap__row';
+
+      const meta = document.createElement('div');
+      meta.className = 'null-heatmap__meta';
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = row.column_name;
+      const valueSpan = document.createElement('span');
+      valueSpan.textContent = `${formatPercentage(ratio)} (${formatNumber(row.null_count)} nulls)`;
+      meta.append(nameSpan, valueSpan);
+
+      const bar = document.createElement('div');
+      bar.className = 'null-bar';
+      const fill = document.createElement('div');
+      fill.className = 'null-bar__fill';
+      fill.style.width = `${Math.max(0, Math.min(100, ratio * 100))}%`;
+      bar.appendChild(fill);
+
+      item.append(meta, bar);
+      list.appendChild(item);
+    });
+
+  hyperOutput.append(title, description);
+
+  if (!list.hasChildNodes()) {
+    const empty = document.createElement('div');
+    empty.className = 'hyper-output__description';
+    empty.textContent = 'No columns detected to chart. Did the file load correctly?';
+    hyperOutput.append(empty);
+    return;
+  }
+
+  hyperOutput.append(list);
+
+  if (!hasNulls) {
+    const celebratory = document.createElement('div');
+    celebratory.className = 'hyper-output__description';
+    celebratory.textContent = 'No nulls detected. This dataset is crystal clear!';
+    hyperOutput.append(celebratory);
+  }
+}
+
+function renderHyperTable(titleText: string, descriptionText: string, columns: string[], rows: string[][]) {
+  if (!hyperOutput) {
+    return;
+  }
+
+  hyperOutput.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.className = 'hyper-output__title';
+  title.textContent = titleText;
+
+  hyperOutput.appendChild(title);
+
+  if (descriptionText) {
+    const description = document.createElement('div');
+    description.className = 'hyper-output__description';
+    description.textContent = descriptionText;
+    hyperOutput.appendChild(description);
+  }
+
+  if (rows.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'No rows returned.';
+    hyperOutput.appendChild(empty);
+    return;
+  }
+
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  columns.forEach((column) => {
+    const th = document.createElement('th');
+    th.textContent = column;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    row.forEach((cell) => {
+      const td = document.createElement('td');
+      td.textContent = cell;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  hyperOutput.appendChild(table);
+}
+
+function formatNumber(value: number | null | undefined, options?: Intl.NumberFormatOptions): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '–';
+  }
+  try {
+    return Number(value).toLocaleString(undefined, options);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatPercentage(value: number | null | undefined, options?: { maximumFractionDigits?: number; multiply?: boolean }): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '–';
+  }
+  const maximumFractionDigits = options?.maximumFractionDigits ?? 1;
+  const multiply = options?.multiply ?? true;
+  const numeric = multiply ? value * 100 : value;
+  try {
+    return `${numeric.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits,
+    })}%`;
+  } catch {
+    return `${numeric}%`;
+  }
+}
+
+function formatHyperValue(value: any): string {
+  const formatted = formatCell(value);
+  return formatted ? truncateForDisplay(formatted) : '–';
+}
+
+function truncateForDisplay(text: string, maxLength = 64): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
+function renderHyperStatus(message: string, description?: string) {
+  if (!hyperOutput) {
+    return;
+  }
+  hyperOutput.innerHTML = '';
+  const title = document.createElement('div');
+  title.className = 'hyper-output__title';
+  title.textContent = message;
+  hyperOutput.appendChild(title);
+  if (description) {
+    const detail = document.createElement('div');
+    detail.className = 'hyper-output__description';
+    detail.textContent = description;
+    hyperOutput.appendChild(detail);
+  }
+}
+
+function renderHyperError(error: any) {
+  const message = error instanceof Error ? error.message : String(error);
+  renderHyperStatus('Hyper action exploded!', message);
 }
 
 // ---
