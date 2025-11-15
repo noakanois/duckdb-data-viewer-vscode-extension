@@ -133,20 +133,24 @@ async function handleExportMessage(message: any, panel: vscode.WebviewPanel) {
       saveLabel: 'Save',
     });
     if (!targetUri) {
-      panel.webview.postMessage({ command: 'export-status', message: 'Export canceled.' });
       return;
     }
     await vscode.workspace.fs.writeFile(targetUri, bytes);
-    panel.webview.postMessage({
-      command: 'export-status',
-      message: `Saved to ${targetUri.fsPath}`,
-    });
+
+    const choice = await vscode.window.showInformationMessage(
+      `DuckDB export saved to ${targetUri.fsPath}`,
+      'Open File',
+      'Open in DuckDB Viewer'
+    );
+
+    if (choice === 'Open File') {
+      await vscode.commands.executeCommand('vscode.open', targetUri);
+    } else if (choice === 'Open in DuckDB Viewer') {
+      await vscode.commands.executeCommand(COMMAND_ID, targetUri);
+    }
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    panel.webview.postMessage({
-      command: 'export-status',
-      message: `Export failed: ${errMsg}`,
-    });
+    vscode.window.showErrorMessage(`DuckDB export failed: ${errMsg}`);
   }
 }
 
