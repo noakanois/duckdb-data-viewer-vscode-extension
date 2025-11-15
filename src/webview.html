@@ -256,6 +256,154 @@
       flex-direction: column;
       gap: 8px;
     }
+    #snapshot-result {
+      background: transparent;
+      color: inherit;
+      border: 1px dashed var(--panel-border);
+    }
+    .query-history, .snapshot-hub {
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .query-history__header, .snapshot-hub__header {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .query-history__header h3, .snapshot-hub__header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .query-history__header span, .snapshot-hub__header span {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .query-history__list, .snapshot-hub__list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+    .history-entry, .snapshot-entry {
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: var(--vscode-editor-background);
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .history-entry:hover, .snapshot-entry:hover {
+      border-color: var(--accent);
+    }
+    .history-entry__label {
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .history-entry__sql {
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--muted);
+    }
+    .snapshot-entry__meta {
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .snapshot-entry__sample {
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .query-history__list.empty, .snapshot-hub__list.empty {
+      color: var(--muted);
+    }
+    #hyper-panel .panel-heading {
+      align-items: flex-start;
+    }
+    .hyper-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .hyper-action {
+      background: transparent;
+      border: 1px solid var(--panel-border);
+      color: inherit;
+    }
+    .hyper-action:hover {
+      border-color: var(--accent);
+    }
+    .hyper-output {
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .hyper-output table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .hyper-output th, .hyper-output td {
+      border: 1px solid var(--panel-border);
+      padding: 6px 8px;
+      text-align: left;
+    }
+    .hyper-output__title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .hyper-output__description {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .null-bar {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+    .null-bar__fill {
+      height: 100%;
+      background: var(--vscode-errorForeground);
+    }
+    .null-heatmap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .null-heatmap__row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .null-heatmap__meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
@@ -283,12 +431,45 @@
           <h2>SQL Preview</h2>
           <div class="sql-actions">
             <button id="copy-sql">Copy SQL</button>
+            <button id="snapshot-result">Capture Snapshot</button>
             <button id="run-query">Run Query</button>
           </div>
         </div>
         <div class="sql-grid">
           <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
           <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
+          <div class="query-history">
+            <div class="query-history__header">
+              <h3>Query Time Machine</h3>
+              <span>Click to relaunch any previous experiment.</span>
+            </div>
+            <div id="query-history-list" class="query-history__list empty">Run a query to start the time machine.</div>
+          </div>
+          <div class="snapshot-hub">
+            <div class="snapshot-hub__header">
+              <h3>Snapshots</h3>
+              <span>Warp back to saved result universes.</span>
+            </div>
+            <div id="snapshot-list" class="snapshot-hub__list empty">Capture a snapshot to anchor a data universe.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="hyper-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Hyper Actions</h2>
+            <p>Launch ridiculous one-click investigations.</p>
+          </div>
+          <div class="hyper-actions">
+            <button class="hyper-action" data-action="profile">Profile Columns</button>
+            <button class="hyper-action" data-action="nulls">Null Heatmap</button>
+            <button class="hyper-action" data-action="duplicates">Hunt Duplicates</button>
+            <button class="hyper-action" data-action="story">Row Story Sampler</button>
+          </div>
+        </div>
+        <div id="hyper-output" class="hyper-output">
+          <div class="empty-state">Summon a hyper action to materialize instant insights.</div>
         </div>
       </section>
     </main>
