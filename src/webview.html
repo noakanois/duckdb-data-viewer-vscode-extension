@@ -66,6 +66,28 @@
       gap: 16px;
       min-height: 0;
     }
+    .main-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+      gap: 16px;
+      min-height: 0;
+    }
+    .primary-column,
+    .side-column {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+    @media (max-width: 1100px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+      .side-column {
+        order: -1;
+      }
+    }
     .panel {
       background: var(--panel-bg);
       border: 1px solid var(--panel-border);
@@ -242,10 +264,15 @@
       opacity: 0.6;
       cursor: default;
     }
-    #copy-sql {
+    #copy-sql,
+    .secondary-button {
       background: transparent;
       color: inherit;
       border: 1px solid var(--panel-border);
+    }
+    #materialize-view {
+      background: var(--vscode-charts-yellow, var(--accent));
+      color: var(--vscode-button-foreground);
     }
     .sql-hints {
       font-size: 12px;
@@ -256,6 +283,86 @@
       flex-direction: column;
       gap: 8px;
     }
+    .panel-placeholder {
+      font-size: 12px;
+      color: var(--muted);
+      font-style: italic;
+    }
+    .panel-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .panel-list li {
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .panel-list .list-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .panel-list .list-meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .list-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .list-actions button {
+      padding: 6px 12px;
+      font-size: 12px;
+      border-radius: 999px;
+    }
+    .list-headline {
+      font-size: 12px;
+      color: var(--vscode-foreground, inherit);
+    }
+    .meta-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--panel-border);
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .sql-snippet {
+      margin: 0;
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: rgba(0, 0, 0, 0.15);
+      padding: 8px;
+      border-radius: 8px;
+    }
+    .link-button {
+      background: transparent;
+      border: none;
+      color: var(--vscode-textLink-foreground, var(--accent));
+      padding: 0;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .link-button:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -265,32 +372,73 @@
     </div>
 
     <main>
-      <section class="panel" id="results-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Data Preview</h2>
-            <div id="row-count">Awaiting data…</div>
-          </div>
-          <input type="search" id="global-search" placeholder="Search across all columns" />
-        </div>
-        <div id="results-container">
-          <div class="empty-state">Load a file to see the first rows.</div>
-        </div>
-      </section>
+      <div class="main-grid">
+        <aside class="side-column">
+          <section class="panel" id="insights-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Instant Insights</h2>
+                <p>Automatic column highlights from the latest query.</p>
+              </div>
+            </div>
+            <p class="panel-placeholder" id="insights-empty">Run any query to discover column insights.</p>
+            <ul class="panel-list" id="insights-list"></ul>
+          </section>
 
-      <section class="panel" id="controls">
-        <div class="panel-heading">
-          <h2>SQL Preview</h2>
-          <div class="sql-actions">
-            <button id="copy-sql">Copy SQL</button>
-            <button id="run-query">Run Query</button>
-          </div>
+          <section class="panel" id="history-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Query History</h2>
+                <p>Click to resurrect past experiments.</p>
+              </div>
+              <button class="link-button" id="clear-history">Clear</button>
+            </div>
+            <p class="panel-placeholder" id="history-empty">Every executed query will appear here for one-click reruns.</p>
+            <ul class="panel-list" id="history-list"></ul>
+          </section>
+
+          <section class="panel" id="views-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Temp Views</h2>
+                <p>Materialize queries into reusable DuckDB views.</p>
+              </div>
+            </div>
+            <p class="panel-placeholder" id="views-empty">Materialize any query to create an instant reusable view.</p>
+            <ul class="panel-list" id="views-list"></ul>
+          </section>
+        </aside>
+
+        <div class="primary-column">
+          <section class="panel" id="results-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Data Preview</h2>
+                <div id="row-count">Awaiting data…</div>
+              </div>
+              <input type="search" id="global-search" placeholder="Search across all columns" />
+            </div>
+            <div id="results-container">
+              <div class="empty-state">Load a file to see the first rows.</div>
+            </div>
+          </section>
+
+          <section class="panel" id="controls">
+            <div class="panel-heading">
+              <h2>SQL Playground</h2>
+              <div class="sql-actions">
+                <button id="copy-sql" class="secondary-button">Copy SQL</button>
+                <button id="materialize-view">Materialize as View</button>
+                <button id="run-query">Run Query</button>
+              </div>
+            </div>
+            <div class="sql-grid">
+              <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
+              <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
+            </div>
+          </section>
         </div>
-        <div class="sql-grid">
-          <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
-          <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
-        </div>
-      </section>
+      </div>
     </main>
   </div>
 
