@@ -27,6 +27,9 @@
     * {
       box-sizing: border-box;
     }
+    .hidden {
+      display: none !important;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0;
@@ -41,6 +44,8 @@
       flex-direction: column;
       gap: 16px;
       width: 100%;
+      flex: 1;
+      min-height: 0;
     }
     #status-wrapper {
       background: var(--panel-bg);
@@ -104,6 +109,9 @@
     }
     #results-panel {
       flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
     #results-container {
       display: none;
@@ -113,6 +121,32 @@
       overflow: auto;
       background: var(--vscode-editor-background);
       box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+    .panel-toggle-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .panel-toggle-bar span {
+      font-weight: 600;
+      color: inherit;
+    }
+    .panel-toggle {
+      border-radius: 999px;
+      border: 1px solid var(--panel-border);
+      background: transparent;
+      color: inherit;
+      padding: 4px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .panel-toggle[aria-pressed="true"] {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border-color: var(--vscode-button-border, transparent);
     }
     table {
       width: 100%;
@@ -256,12 +290,355 @@
       flex-direction: column;
       gap: 8px;
     }
+    .sql-error {
+      display: none;
+      font-size: 12px;
+      color: var(--vscode-errorForeground);
+      background: rgba(255, 0, 0, 0.08);
+      border: 1px solid rgba(255, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 8px 12px;
+    }
+    .sql-error.visible {
+      display: block;
+    }
+    .secondary {
+      background: transparent;
+      border-color: var(--panel-border);
+      color: inherit;
+    }
+    .viewer-layout {
+      flex: 1;
+      display: flex;
+      gap: 20px;
+      min-height: 0;
+    }
+    .viewer-layout > * {
+      min-width: 0;
+      min-height: 0;
+    }
+    .side-column {
+      flex: 0 0 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+      overflow: auto;
+    }
+    .side-column.hidden {
+      display: none;
+    }
+    .primary-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+    .primary-panel #results-container {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+    }
+    .sidebar-card {
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      background: var(--vscode-editor-background);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sidebar-card header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .sidebar-card header h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .sidebar-card header span {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .schema-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .schema-card .schema-list {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 12px;
+      overflow-y: auto;
+    }
+    .schema-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding-bottom: 6px;
+    }
+    .schema-row:last-child {
+      border-bottom: none;
+    }
+    .schema-row .muted {
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .history-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .history-list {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .history-item:last-child {
+      border-bottom: none;
+    }
+    .history-item.error .history-sql {
+      color: var(--vscode-errorForeground);
+    }
+    .history-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .history-sql {
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .history-meta {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .history-actions {
+      display: flex;
+      align-items: center;
+    }
+    .chart-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+    .chart-card header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .chart-card header h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .chart-card header select {
+      border-radius: 6px;
+      border: 1px solid var(--panel-border);
+      background: var(--vscode-editor-background);
+      color: inherit;
+      padding: 4px 10px;
+      min-width: 150px;
+    }
+    .chart-card .chart-wrapper {
+      position: relative;
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      min-height: 200px;
+      flex: 1;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    #chart-canvas {
+      width: 100%;
+      height: 220px;
+      display: none;
+    }
+    #chart-empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .export-inline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    .export-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .empty-state.subtle {
+      padding: 12px 0;
+      font-size: 12px;
+    }
+    @media (max-width: 1200px) {
+      .viewer-layout {
+        flex-direction: column;
+      }
+      .side-column {
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+      .side-column .sidebar-card {
+        flex: 1 1 260px;
+      }
+    }
+    @media (max-width: 768px) {
+      .export-inline {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .export-actions {
+        justify-content: stretch;
+      }
+      .export-actions button {
+        width: 100%;
+      }
+      .panel-toggle-bar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+    
+    /* File Discovery Drawer */
+    #file-discovery {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    #file-discovery-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      cursor: pointer;
+      user-select: none;
+      background: var(--panel-bg);
+    }
+    #file-discovery-header:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+    #file-discovery-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    #file-discovery-arrow {
+      font-size: 10px;
+      color: var(--muted);
+      transition: transform 0.2s;
+    }
+    #file-discovery-arrow.expanded {
+      transform: rotate(90deg);
+    }
+    #file-discovery-count {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: normal;
+    }
+    #file-list-container {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+    #file-list-container.expanded {
+      max-height: 400px;
+      overflow-y: auto;
+      border-top: 1px solid var(--panel-border);
+    }
+    #file-list {
+      padding: 8px;
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .file-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .file-type-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+    }
+    .file-path {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-list-empty {
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
   <div class="app-shell">
     <div id="status-wrapper">
       <div id="status">Initializing…</div>
+    </div>
+
+    <div id="file-discovery">
+      <div id="file-discovery-header">
+        <div id="file-discovery-title">
+          <span id="file-discovery-arrow">▶</span>
+          <span>Compatible Files</span>
+          <span id="file-discovery-count"></span>
+        </div>
+      </div>
+      <div id="file-list-container">
+        <div id="file-list">
+          <div class="file-list-empty">Searching for compatible files...</div>
+        </div>
+      </div>
     </div>
 
     <main>
@@ -273,8 +650,51 @@
           </div>
           <input type="search" id="global-search" placeholder="Search across all columns" />
         </div>
-        <div id="results-container">
-          <div class="empty-state">Load a file to see the first rows.</div>
+        <div class="panel-toggle-bar">
+          <button class="panel-toggle" data-panel-toggle="history" aria-pressed="true">History</button>
+          <button class="panel-toggle" data-panel-toggle="schema" aria-pressed="true">Schema</button>
+          <button class="panel-toggle" data-panel-toggle="chart" aria-pressed="true">Quick chart</button>
+        </div>
+        <div class="viewer-layout">
+          <div class="side-column" id="history-panel">
+            <div class="sidebar-card history-card">
+              <header>
+                <h3>Query history</h3>
+              </header>
+              <div id="history-list" class="timeline history-list"></div>
+            </div>
+          </div>
+          <div class="primary-panel">
+            <div id="results-container">
+              <div class="empty-state">Load a file to see the first rows.</div>
+            </div>
+            <div class="export-inline">
+              <div class="export-actions">
+                <button data-export-format="csv">Export CSV</button>
+                <button data-export-format="parquet">Export Parquet</button>
+                <button data-export-format="arrow">Export Arrow</button>
+              </div>
+            </div>
+          </div>
+          <div class="side-column" id="insights-panel">
+            <div class="sidebar-card schema-card">
+              <header>
+                <h3>Schema</h3>
+                <span id="schema-count"></span>
+              </header>
+              <div id="schema-list" class="schema-list"></div>
+            </div>
+            <div class="sidebar-card chart-card">
+              <header>
+                <h3>Quick chart</h3>
+                <select id="chart-column"></select>
+              </header>
+              <div class="chart-wrapper">
+                <div id="chart-empty">Run a query to visualize data.</div>
+                <canvas id="chart-canvas"></canvas>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -283,6 +703,7 @@
           <h2>SQL Preview</h2>
           <div class="sql-actions">
             <button id="copy-sql">Copy SQL</button>
+            <button id="reset-query" class="secondary" disabled>Reset View</button>
             <button id="run-query">Run Query</button>
           </div>
         </div>
@@ -290,7 +711,9 @@
           <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
           <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
         </div>
+        <div id="sql-error" class="sql-error"></div>
       </section>
+
     </main>
   </div>
 

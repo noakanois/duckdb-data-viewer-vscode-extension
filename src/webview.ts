@@ -1,5 +1,5 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
-import { Table } from 'apache-arrow';
+import { Table, Type, tableToIPC } from 'apache-arrow';
 import { csvLoader } from './loaders/csvLoader';
 import { arrowLoader } from './loaders/arrowLoader';
 import { parquetLoader } from './loaders/parquetLoader';
@@ -19,6 +19,25 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const resetButton = document.getElementById('reset-query') as HTMLButtonElement | null;
+const sqlErrorContainer = document.getElementById('sql-error');
+const historyList = document.getElementById('history-list');
+const schemaList = document.getElementById('schema-list');
+const schemaCountLabel = document.getElementById('schema-count');
+const chartCanvas = document.getElementById('chart-canvas') as HTMLCanvasElement | null;
+const chartEmptyState = document.getElementById('chart-empty');
+const chartColumnSelect = document.getElementById('chart-column') as HTMLSelectElement | null;
+const panelToggleButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-panel-toggle]'));
+const exportButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-export-format]'));
+const historyPanel = document.getElementById('history-panel');
+const insightsPanel = document.getElementById('insights-panel');
+const schemaCard = document.querySelector<HTMLElement>('.schema-card');
+const chartCard = document.querySelector<HTMLElement>('.chart-card');
+const fileDiscoveryHeader = document.getElementById('file-discovery-header');
+const fileDiscoveryArrow = document.getElementById('file-discovery-arrow');
+const fileListContainer = document.getElementById('file-list-container');
+const fileList = document.getElementById('file-list');
+const fileDiscoveryCount = document.getElementById('file-discovery-count');
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -32,6 +51,25 @@ interface TableData {
   rows: TableRow[];
 }
 
+interface QueryHistoryEntry {
+  id: number;
+  sql: string;
+  timestamp: number;
+  durationMs: number;
+  rowCount: number;
+  error?: string;
+}
+
+interface SchemaColumn {
+  name: string;
+  type: string;
+}
+
+type ExportFormat = 'csv' | 'parquet' | 'arrow';
+interface ChartState {
+  column: string;
+}
+
 let db: duckdb.AsyncDuckDB | null = null;
 let connection: duckdb.AsyncDuckDBConnection | null = null;
 let duckdbInitializationPromise: Promise<void> | null = null;
@@ -42,8 +80,22 @@ let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
 const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
+let defaultQueryText: string | null = null;
+let queryHistory: QueryHistoryEntry[] = [];
+let nextHistoryId = 1;
+let sourceSchema: SchemaColumn[] = [];
+let lastArrowResult: Table | null = null;
+let chartState: ChartState = { column: '' };
 
 // --- Event Listeners (Moved to top) ---
+async function runQueryWithUiFeedback(sql: string) {
+  clearSqlError();
+  try {
+    await runQuery(sql);
+  } catch (error) {
+    showSqlError(error);
+  }
+}
 
 // Listen for messages from the extension
 window.addEventListener('message', (event: any) => {
@@ -54,12 +106,14 @@ window.addEventListener('message', (event: any) => {
     handleFileLoad(message.fileName, message.fileData).catch(reportError);
   } else if (message.command === 'error') {
     reportError(message.message);
+  } else if (message.command === 'fileList') {
+    populateFileList(message.files);
   }
 });
 
 // Listen for the "Run" button click
 runButton.addEventListener('click', () => {
-  runQuery(sqlInput.value).catch(reportError);
+  runQueryWithUiFeedback(sqlInput.value);
 });
 
 // Allow Cmd/Ctrl + Enter to run the query
@@ -67,7 +121,7 @@ sqlInput.addEventListener('keydown', (event: KeyboardEvent) => {
   const isSubmitShortcut = event.key === 'Enter' && (event.metaKey || event.ctrlKey);
   if (isSubmitShortcut) {
     event.preventDefault();
-    runQuery(sqlInput.value).catch(reportError);
+    runQueryWithUiFeedback(sqlInput.value);
   }
 });
 
@@ -97,6 +151,71 @@ if (copySqlButton) {
   });
 }
 
+if (resetButton) {
+  resetButton.addEventListener('click', () => {
+    if (!defaultQueryText) {
+      return;
+    }
+    sqlInput.value = defaultQueryText;
+    runQueryWithUiFeedback(defaultQueryText);
+  });
+}
+
+if (chartColumnSelect) {
+  chartColumnSelect.addEventListener('change', () => {
+    chartState.column = chartColumnSelect.value;
+    renderChart();
+  });
+}
+
+const panelVisibilityState: Record<string, boolean> = {};
+panelToggleButtons.forEach((button) => {
+  const panelId = button.dataset.panelToggle;
+  if (!panelId) {
+    return;
+  }
+  if (!(panelId in panelVisibilityState)) {
+    panelVisibilityState[panelId] = true;
+  }
+  button.addEventListener('click', () => {
+    panelVisibilityState[panelId] = !panelVisibilityState[panelId];
+    applyPanelVisibility(panelId);
+  });
+  applyPanelVisibility(panelId);
+});
+
+exportButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const format = button.dataset.exportFormat as ExportFormat | undefined;
+    if (format) {
+      exportResult(format).catch(reportError);
+    }
+  });
+});
+
+window.addEventListener('resize', () => {
+  renderChart();
+});
+
+renderQueryHistory();
+renderSchemaOverview();
+populateChartColumns(null);
+updateResetButtonState();
+renderChart();
+
+// File discovery toggle
+if (fileDiscoveryHeader) {
+  fileDiscoveryHeader.addEventListener('click', () => {
+    const isExpanded = fileListContainer?.classList.contains('expanded');
+    if (isExpanded) {
+      fileListContainer?.classList.remove('expanded');
+      fileDiscoveryArrow?.classList.remove('expanded');
+    } else {
+      fileListContainer?.classList.add('expanded');
+      fileDiscoveryArrow?.classList.add('expanded');
+    }
+  });
+}
 // --- Core Functions ---
 
 function createDuckDBWorker(workerSource: string, workerUrl: string): { worker: Worker; cleanup: () => void } {
@@ -191,11 +310,15 @@ async function handleFileLoad(fileName: string, fileData: any) {
   const defaultQuery = buildDefaultQuery(loadResult.columns, loadResult.relationIdentifier);
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
+  defaultQueryText = defaultQuery;
+  sourceSchema = loadResult.schema ?? [];
+  renderSchemaOverview();
+  updateResetButtonState();
 
   if (controls) controls.style.display = 'flex';
   if (resultsContainer) resultsContainer.style.display = 'block';
 
-  await runQuery(defaultQuery);
+  await runQueryWithUiFeedback(defaultQuery);
 }
 
 function selectLoader(fileName: string): DataLoader {
@@ -223,26 +346,44 @@ function extractFileBytes(fileData: any): Uint8Array {
 
 async function runQuery(sql: string) {
   if (!connection) {
-    throw new Error("No database connection.");
+    throw new Error('No database connection.');
   }
-  
-  // Show status bar for "Running query..."
-  updateStatus('Running query...');
+
+  const normalizedSql = sql.trim();
+  if (!normalizedSql) {
+    showSqlError('Enter a SQL query to run.');
+    return;
+  }
+
   runButton.disabled = true;
 
+  const start = performance.now();
+  const entryBase: QueryHistoryEntry = {
+    id: nextHistoryId++,
+    sql: normalizedSql,
+    timestamp: Date.now(),
+    durationMs: 0,
+    rowCount: 0,
+  };
+
   try {
-    const result = await connection.query(sql);
+    const result = await connection.query(normalizedSql);
     renderResults(result);
-    
-    // --- CHANGE ---
-    // Hide the status bar on success
     if (statusWrapper) {
       statusWrapper.style.display = 'none';
     }
-    // ---
-
+    recordQueryHistory({
+      ...entryBase,
+      durationMs: performance.now() - start,
+      rowCount: result ? result.numRows : 0,
+    });
   } catch (e) {
-    reportError(e); // reportError will show the status bar
+    recordQueryHistory({
+      ...entryBase,
+      durationMs: performance.now() - start,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
   } finally {
     runButton.disabled = false;
   }
@@ -258,9 +399,13 @@ function renderResults(table: Table | null) {
     currentTableData = null;
     tableBodyElement = null;
     updateRowCount(0, 0);
+    lastArrowResult = table;
+    populateChartColumns(null);
+    renderChart();
     return;
   }
 
+  lastArrowResult = table;
   const rows: TableRow[] = [];
   const columns = table.schema.fields.map((field) => field.name);
 
@@ -285,6 +430,9 @@ function renderResults(table: Table | null) {
   if (globalSearchInput) {
     globalSearchInput.value = '';
   }
+
+  populateChartColumns(table);
+  renderChart();
 
   buildTableSkeleton(columns);
   applyTableState();
@@ -456,7 +604,15 @@ function updateRowCount(visible: number, total: number) {
   if (!rowCountLabel) {
     return;
   }
-  rowCountLabel.textContent = '';
+  if (total === 0) {
+    rowCountLabel.textContent = 'No rows to display';
+    return;
+  }
+  const visibleLabel = visible.toLocaleString();
+  const totalLabel = total.toLocaleString();
+  rowCountLabel.textContent = visible === total
+    ? `${visibleLabel} rows`
+    : `${visibleLabel} of ${totalLabel} rows`;
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
@@ -499,6 +655,402 @@ function formatCell(value: any): string {
   return String(value);
 }
 
+function recordQueryHistory(entry: QueryHistoryEntry) {
+  queryHistory = [entry, ...queryHistory].slice(0, 25);
+  renderQueryHistory();
+}
+
+function renderQueryHistory() {
+  if (!historyList) {
+    return;
+  }
+  if (queryHistory.length === 0) {
+    historyList.innerHTML = '<div class="empty-state subtle">Run a query to build a history timeline.</div>';
+    return;
+  }
+
+  const items = queryHistory
+    .map((entry) => {
+      const metaParts = [
+        `${entry.rowCount.toLocaleString()} row${entry.rowCount === 1 ? '' : 's'}`,
+        `${Math.max(1, Math.round(entry.durationMs)).toLocaleString()} ms`,
+        new Date(entry.timestamp).toLocaleTimeString(),
+      ];
+      const meta = metaParts.join(' • ');
+      const classes = ['history-item'];
+      if (entry.error) {
+        classes.push('error');
+      }
+      return `
+        <article class="${classes.join(' ')}">
+          <div class="history-body">
+            <div class="history-sql">${escapeHtml(entry.sql)}</div>
+            <div class="history-meta">${entry.error ? escapeHtml(entry.error) + ' • ' : ''}${meta}</div>
+          </div>
+          <div class="history-actions">
+            <button class="secondary" data-history-id="${entry.id}">Run again</button>
+          </div>
+        </article>
+      `;
+    })
+    .join('');
+
+  historyList.innerHTML = items;
+  historyList.querySelectorAll<HTMLButtonElement>('button[data-history-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = Number(button.dataset.historyId);
+      const entry = queryHistory.find((item) => item.id === id);
+      if (entry) {
+        sqlInput.value = entry.sql;
+        runQueryWithUiFeedback(entry.sql);
+      }
+    });
+  });
+}
+
+function updateResetButtonState() {
+  if (resetButton) {
+    resetButton.disabled = !defaultQueryText;
+  }
+}
+
+function describeFieldType(field: { type?: { toString?: () => string }; typeId?: Type }): string {
+  if (!field) {
+    return 'unknown';
+  }
+  if (field.type && typeof field.type.toString === 'function') {
+    return field.type.toString();
+  }
+  return field.typeId !== undefined ? Type[field.typeId] ?? 'unknown' : 'unknown';
+}
+
+function isIntegerField(field: { typeId?: Type }): boolean {
+  if (field?.typeId === undefined) {
+    return false;
+  }
+  const integerTypes: Type[] = [
+    Type.Int,
+    Type.Int8,
+    Type.Int16,
+    Type.Int32,
+    Type.Int64,
+    Type.Uint8,
+    Type.Uint16,
+    Type.Uint32,
+    Type.Uint64,
+  ];
+  return integerTypes.includes(field.typeId);
+}
+
+function isNumericField(field: { typeId?: Type }): boolean {
+  if (field?.typeId === undefined) {
+    return false;
+  }
+  const numericTypes: Type[] = [
+    Type.Int,
+    Type.Int8,
+    Type.Int16,
+    Type.Int32,
+    Type.Int64,
+    Type.Uint8,
+    Type.Uint16,
+    Type.Uint32,
+    Type.Uint64,
+    Type.Float,
+    Type.Float16,
+    Type.Float32,
+    Type.Float64,
+    Type.Decimal,
+  ];
+  return numericTypes.includes(field.typeId);
+}
+
+function renderSchemaOverview() {
+  if (!schemaList) {
+    return;
+  }
+  if (!sourceSchema.length) {
+    schemaList.innerHTML = '<div class="empty-state subtle">Schema information will appear after the source file loads.</div>';
+    if (schemaCountLabel) {
+      schemaCountLabel.textContent = '';
+    }
+    return;
+  }
+
+  const rows = sourceSchema
+    .map((column) => `<div class="schema-row"><span>${escapeHtml(column.name)}</span><span class="muted">${escapeHtml(column.type)}</span></div>`)
+    .join('');
+  schemaList.innerHTML = rows;
+  if (schemaCountLabel) {
+    schemaCountLabel.textContent = `${sourceSchema.length} cols`;
+  }
+}
+
+function populateChartColumns(table: Table | null) {
+  if (!chartColumnSelect) {
+    return;
+  }
+  const fields = table ? table.schema.fields.filter(isNumericField) : [];
+  chartColumnSelect.innerHTML = '';
+  chartColumnSelect.disabled = fields.length === 0;
+  if (fields.length === 0) {
+    chartState.column = '';
+    chartColumnSelect.value = '';
+    renderChart();
+    return;
+  }
+  fields.forEach((field) => {
+    const option = document.createElement('option');
+    option.value = field.name;
+    option.textContent = field.name;
+    chartColumnSelect.appendChild(option);
+  });
+
+  if (!fields.some((field) => field.name === chartState.column)) {
+    const preferred = fields.find(isIntegerField) ?? fields[0];
+    chartState.column = preferred?.name ?? '';
+  }
+  if (!chartState.column && fields[0]) {
+    chartState.column = fields[0].name;
+  }
+  chartColumnSelect.value = chartState.column;
+}
+
+function renderChart() {
+  if (!chartCanvas) {
+    return;
+  }
+  if (!currentTableData) {
+    toggleChartEmptyState('Run a query to visualize data.');
+    return;
+  }
+  if (!chartState.column) {
+    const message = chartColumnSelect?.disabled
+      ? 'No numeric columns available for charting.'
+      : 'Pick a numeric column to start charting.';
+    toggleChartEmptyState(message);
+    return;
+  }
+
+  const columnIndex = currentTableData.columns.indexOf(chartState.column);
+  if (columnIndex === -1) {
+    toggleChartEmptyState('Selected column is not in the current result.');
+    return;
+  }
+
+  const points = currentTableData.rows
+    .map((row, idx) => {
+      const value = Number(row.raw[columnIndex]);
+      if (!Number.isFinite(value)) {
+        return null;
+      }
+      const label = `Row ${idx + 1}`;
+      return { label, value };
+    })
+    .filter((point): point is { label: string; value: number } => point !== null);
+
+  if (!points.length) {
+    toggleChartEmptyState('No numeric values available for the selected column.');
+    return;
+  }
+
+  const ctx = chartCanvas.getContext('2d');
+  if (!ctx) {
+    return;
+  }
+
+  const styles = getComputedStyle(document.body);
+  const accent = styles.getPropertyValue('--accent') || '#0098ff';
+  const muted = styles.getPropertyValue('--muted') || '#888';
+  const border = styles.getPropertyValue('--panel-border') || '#555';
+
+  if (chartEmptyState) {
+    chartEmptyState.style.display = 'none';
+  }
+  chartCanvas.style.display = 'block';
+
+  const width = chartCanvas.clientWidth || 420;
+  const height = chartCanvas.clientHeight || 260;
+  const dpr = window.devicePixelRatio || 1;
+  chartCanvas.width = width * dpr;
+  chartCanvas.height = height * dpr;
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+
+  const paddingLeft = 64;
+  const paddingRight = 24;
+  const paddingTop = 24;
+  const paddingBottom = 36;
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+  const values = points.map((point) => point.value);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const valueRange = maxValue - minValue || 1;
+
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(paddingLeft, height - paddingBottom);
+  ctx.lineTo(width - paddingRight, height - paddingBottom);
+  ctx.moveTo(paddingLeft, paddingTop);
+  ctx.lineTo(paddingLeft, height - paddingBottom);
+  ctx.stroke();
+
+  const tickCount = 4;
+  ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.fillStyle = muted;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= tickCount; i++) {
+    const ratio = i / tickCount;
+    const value = maxValue - ratio * valueRange;
+    const y = paddingTop + ratio * chartHeight;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft - 4, y);
+    ctx.lineTo(paddingLeft, y);
+    ctx.stroke();
+    ctx.fillText(value.toLocaleString(), paddingLeft - 8, y);
+  }
+
+  const barWidth = chartWidth / points.length;
+  ctx.fillStyle = accent;
+  points.forEach((point, index) => {
+    const x = paddingLeft + index * barWidth + barWidth * 0.1;
+    const barHeight = ((point.value - minValue) / valueRange) * chartHeight;
+    const y = paddingTop + (chartHeight - barHeight);
+    ctx.fillRect(x, y, barWidth * 0.8, barHeight);
+  });
+
+  ctx.restore();
+}
+
+function toggleChartEmptyState(message: string) {
+  if (chartEmptyState) {
+    chartEmptyState.textContent = message;
+    chartEmptyState.style.display = 'flex';
+  }
+  if (chartCanvas) {
+    chartCanvas.style.display = 'none';
+  }
+}
+
+async function exportResult(format: ExportFormat) {
+  if (!connection || !db) {
+    throw new Error('DuckDB is not ready for export.');
+  }
+  const baseName = 'duckdb_result';
+  const normalizedQuery = sqlInput.value.trim();
+  if (!normalizedQuery) {
+    updateStatus('Write a SQL query to export first.');
+    return;
+  }
+
+  if (format === 'arrow') {
+    if (!lastArrowResult) {
+      await runQuery(normalizedQuery);
+    }
+    if (!lastArrowResult) {
+      updateStatus('Run the query before exporting to Arrow.');
+      return;
+    }
+    const arrowBuffer = asSerializableBuffer(tableToIPC(lastArrowResult, 'file'));
+    await requestFileSave(`${baseName}.arrow`, arrowBuffer, format);
+    return;
+  }
+
+  const exportPath = `memory://duckdb-viewer/${Date.now()}.${format}`;
+  const wrappedQuery = normalizeSqlForEmbedding(normalizedQuery);
+  const copyStatement = format === 'csv'
+    ? `COPY (${wrappedQuery}) TO '${exportPath}' (FORMAT CSV, HEADER true);`
+    : `COPY (${wrappedQuery}) TO '${exportPath}' (FORMAT PARQUET);`;
+
+  await connection.query(copyStatement);
+  const buffer = await db.copyFileToBuffer(exportPath);
+  await db.dropFile(exportPath);
+
+  const extension = format === 'csv' ? 'csv' : 'parquet';
+  await requestFileSave(`${baseName}.${extension}`, asSerializableBuffer(buffer), format);
+}
+
+async function requestFileSave(fileName: string, buffer: ArrayBuffer, format: ExportFormat) {
+  const serializable = Array.from(new Uint8Array(buffer));
+  vscode.postMessage({
+    command: 'export-data',
+    fileName,
+    format,
+    buffer: serializable,
+  });
+}
+
+function normalizeSqlForEmbedding(sql: string): string {
+  return sql.replace(/;\s*$/g, '').trim();
+}
+
+function escapeHtml(value: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return value.replace(/[&<>"']/g, (char) => map[char]);
+}
+
+function asSerializableBuffer(view: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(view.length);
+  copy.set(view);
+  return copy.buffer;
+}
+
+function showSqlError(error: any) {
+  if (!sqlErrorContainer) {
+    return;
+  }
+  const message = typeof error === 'string'
+    ? error
+    : error instanceof Error
+      ? error.message
+      : String(error);
+  sqlErrorContainer.textContent = `SQL error: ${message}`;
+  sqlErrorContainer.classList.add('visible');
+}
+
+function clearSqlError() {
+  if (!sqlErrorContainer) {
+    return;
+  }
+  sqlErrorContainer.textContent = '';
+  sqlErrorContainer.classList.remove('visible');
+}
+
+function applyPanelVisibility(panelId: string) {
+  const visible = panelVisibilityState[panelId];
+  const button = panelToggleButtons.find((btn) => btn.dataset.panelToggle === panelId);
+  if (button) {
+    button.setAttribute('aria-pressed', visible ? 'true' : 'false');
+  }
+
+  if (panelId === 'history' && historyPanel) {
+    historyPanel.classList.toggle('hidden', !visible);
+  }
+  if (panelId === 'schema' && schemaCard) {
+    schemaCard.style.display = visible ? '' : 'none';
+  }
+  if (panelId === 'chart' && chartCard) {
+    chartCard.style.display = visible ? '' : 'none';
+  }
+
+  if (insightsPanel) {
+    const schemaVisible = panelVisibilityState['schema'] !== false;
+    const chartVisible = panelVisibilityState['chart'] !== false;
+    const insightsVisible = schemaVisible || chartVisible;
+    insightsPanel.classList.toggle('hidden', !insightsVisible);
+  }
+}
+
 // ---
 // Helpers
 // ---
@@ -530,7 +1082,7 @@ function updateStatus(message: string) {
 }
 function reportError(e: any) {
   const message = e instanceof Error ? e.message : String(e);
-  
+
   // Always make the status bar visible for errors
   if (statusWrapper) {
     statusWrapper.style.display = 'block';
@@ -540,6 +1092,48 @@ function reportError(e: any) {
     status.classList.add('error'); // Add a red error style
   }
   console.error(`[Error] ${message}`, e);
+}
+
+// Populate the file list in the discovery panel
+function populateFileList(files: Array<{ path: string; relativePath: string; type: string }>) {
+  if (!fileList || !fileDiscoveryCount) {
+    return;
+  }
+
+  if (files.length === 0) {
+    fileList.innerHTML = '<div class="file-list-empty">No compatible files found in workspace</div>';
+    fileDiscoveryCount.textContent = '';
+    return;
+  }
+
+  fileDiscoveryCount.textContent = `(${files.length})`;
+
+  const listHtml = files.map(file => {
+    const escapedPath = file.path.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const escapedRelativePath = file.relativePath.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `
+      <div class="file-item" data-file-path="${escapedPath}" title="${escapedRelativePath}">
+        <span class="file-type-badge">${file.type}</span>
+        <span class="file-path">${escapedRelativePath}</span>
+      </div>
+    `;
+  }).join('');
+
+  fileList.innerHTML = listHtml;
+
+  // Add click handlers to all file items
+  const fileItems = fileList.querySelectorAll('.file-item');
+  fileItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const filePath = item.getAttribute('data-file-path');
+      if (filePath) {
+        vscode.postMessage({
+          command: 'loadFileFromList',
+          filePath: filePath
+        });
+      }
+    });
+  });
 }
 
 // Send the 'ready' signal to the extension to start the handshake
