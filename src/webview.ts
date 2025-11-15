@@ -29,6 +29,11 @@ const chartColumnSelect = document.getElementById('chart-column') as HTMLSelectE
 const exportFilenameInput = document.getElementById('export-filename') as HTMLInputElement | null;
 const exportStatus = document.getElementById('export-status');
 const exportButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-export-format]'));
+const fileDiscoveryHeader = document.getElementById('file-discovery-header');
+const fileDiscoveryArrow = document.getElementById('file-discovery-arrow');
+const fileListContainer = document.getElementById('file-list-container');
+const fileList = document.getElementById('file-list');
+const fileDiscoveryCount = document.getElementById('file-discovery-count');
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -93,6 +98,8 @@ window.addEventListener('message', (event: any) => {
     if (typeof message.message === 'string') {
       updateExportStatus(message.message);
     }
+  } else if (message.command === 'fileList') {
+    populateFileList(message.files);
   }
 });
 
@@ -172,6 +179,19 @@ populateChartColumns(null);
 updateResetButtonState();
 renderChart();
 
+// File discovery toggle
+if (fileDiscoveryHeader) {
+  fileDiscoveryHeader.addEventListener('click', () => {
+    const isExpanded = fileListContainer?.classList.contains('expanded');
+    if (isExpanded) {
+      fileListContainer?.classList.remove('expanded');
+      fileDiscoveryArrow?.classList.remove('expanded');
+    } else {
+      fileListContainer?.classList.add('expanded');
+      fileDiscoveryArrow?.classList.add('expanded');
+    }
+  });
+}
 // --- Core Functions ---
 
 function createDuckDBWorker(workerSource: string, workerUrl: string): { worker: Worker; cleanup: () => void } {
@@ -993,7 +1013,7 @@ function updateStatus(message: string) {
 }
 function reportError(e: any) {
   const message = e instanceof Error ? e.message : String(e);
-  
+
   // Always make the status bar visible for errors
   if (statusWrapper) {
     statusWrapper.style.display = 'block';
@@ -1003,6 +1023,48 @@ function reportError(e: any) {
     status.classList.add('error'); // Add a red error style
   }
   console.error(`[Error] ${message}`, e);
+}
+
+// Populate the file list in the discovery panel
+function populateFileList(files: Array<{ path: string; relativePath: string; type: string }>) {
+  if (!fileList || !fileDiscoveryCount) {
+    return;
+  }
+
+  if (files.length === 0) {
+    fileList.innerHTML = '<div class="file-list-empty">No compatible files found in workspace</div>';
+    fileDiscoveryCount.textContent = '';
+    return;
+  }
+
+  fileDiscoveryCount.textContent = `(${files.length})`;
+
+  const listHtml = files.map(file => {
+    const escapedPath = file.path.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const escapedRelativePath = file.relativePath.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `
+      <div class="file-item" data-file-path="${escapedPath}" title="${escapedRelativePath}">
+        <span class="file-type-badge">${file.type}</span>
+        <span class="file-path">${escapedRelativePath}</span>
+      </div>
+    `;
+  }).join('');
+
+  fileList.innerHTML = listHtml;
+
+  // Add click handlers to all file items
+  const fileItems = fileList.querySelectorAll('.file-item');
+  fileItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const filePath = item.getAttribute('data-file-path');
+      if (filePath) {
+        vscode.postMessage({
+          command: 'loadFileFromList',
+          filePath: filePath
+        });
+      }
+    });
+  });
 }
 
 // Send the 'ready' signal to the extension to start the handshake

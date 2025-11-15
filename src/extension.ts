@@ -74,11 +74,30 @@ export function activate(context: vscode.ExtensionContext) {
         if (message.command === 'duckdb-ready') {
           duckdbReady = true;
           await deliverPendingFile();
+
+          // Send the list of all compatible files in the workspace
+          try {
+            const compatibleFiles = await discoverCompatibleFiles();
+            panel.webview.postMessage({
+              command: 'fileList',
+              files: compatibleFiles
+            });
+          } catch (e) {
+            console.error('Failed to discover files:', e);
+          }
           return;
         }
 
         if (message.command === 'export-data') {
           await handleExportMessage(message, panel);
+          return;
+        }
+
+        if (message.command === 'loadFileFromList') {
+          const fileUri = vscode.Uri.file(message.filePath);
+          const fileName = path.basename(message.filePath);
+          pendingFile = { uri: fileUri, fileName };
+          await deliverPendingFile();
           return;
         }
       },
@@ -208,6 +227,38 @@ function generateNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+}
+
+// Discover all compatible files in the workspace
+async function discoverCompatibleFiles(): Promise<Array<{ path: string; relativePath: string; type: string }>> {
+  const supportedExtensions = ['csv', 'parquet', 'parq', 'arrow', 'ipc'];
+  const files: Array<{ path: string; relativePath: string; type: string }> = [];
+
+  for (const ext of supportedExtensions) {
+    const foundFiles = await vscode.workspace.findFiles(
+      `**/*.${ext}`,
+      '**/node_modules/**',
+      1000 // limit to 1000 files per extension
+    );
+
+    for (const fileUri of foundFiles) {
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileUri);
+      const relativePath = workspaceFolder
+        ? path.relative(workspaceFolder.uri.fsPath, fileUri.fsPath)
+        : path.basename(fileUri.fsPath);
+
+      files.push({
+        path: fileUri.fsPath,
+        relativePath: relativePath,
+        type: ext === 'parq' ? 'parquet' : ext
+      });
+    }
+  }
+
+  // Sort files by relative path
+  files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+  return files;
 }
 
 export function deactivate() {}
