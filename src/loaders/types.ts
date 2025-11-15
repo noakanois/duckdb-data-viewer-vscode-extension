@@ -6,10 +6,16 @@ export interface LoaderContext {
   updateStatus: (message: string) => void;
 }
 
+export interface ColumnDetail {
+  name: string;
+  type: string;
+}
+
 export interface LoadResult {
   relationName: string;
   relationIdentifier: string;
   columns: string[];
+  columnDetails: ColumnDetail[];
 }
 
 export interface DataLoader {

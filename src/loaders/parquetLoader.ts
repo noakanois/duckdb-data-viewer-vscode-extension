@@ -27,10 +27,17 @@ export const parquetLoader: DataLoader = {
     const describeResult = await connection.query(describeQuery);
     
     // 6. Get the column names from the describe result
-    const columns = describeResult
+    const columnDetails = describeResult
       .toArray()
-      .map((row: any) => row.column_name)
-      .filter((name: any): name is string => typeof name === 'string' && name.length > 0);
+      .map((row: any) => ({
+        name: typeof row.column_name === 'string' ? row.column_name : undefined,
+        type: typeof row.column_type === 'string' ? row.column_type : 'unknown',
+      }))
+      .filter((detail): detail is { name: string; type: string } =>
+        typeof detail.name === 'string' && detail.name.length > 0
+      );
+
+    const columns = columnDetails.map((detail) => detail.name);
 
     if (columns.length === 0) {
       throw new Error('No columns were detected in this Parquet file.');
@@ -53,6 +60,7 @@ export const parquetLoader: DataLoader = {
       relationName,
       relationIdentifier,
       columns,
+      columnDetails,
     };
   },
 };
