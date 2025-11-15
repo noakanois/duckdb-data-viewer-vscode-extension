@@ -1,8 +1,8 @@
 {
   "name": "duckdb-data-viewer",
-  "displayName": "DuckDB Data Viewer",
-  "description": "View Parquet, CSV, and SQLite files with DuckDB.",
-  "version": "0.0.1",
+  "displayName": "DuckDB Data Viewer Pro",
+  "description": "Advanced data viewer powered by DuckDB WASM. View, query, analyze, and transform CSV, Parquet, Arrow, JSON, JSONL files with SQL. Features: data profiling, query builder, pivot tables, charts, export, and more!",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.106.0"
   },
@@ -31,12 +31,37 @@
           "group": "navigation"
         },
         {
+          "when": "resourceExtname == .parq",
+          "command": "duckdb-viewer.viewFile",
+          "group": "navigation"
+        },
+        {
           "when": "resourceExtname == .sqlite",
           "command": "duckdb-viewer.viewFile",
           "group": "navigation"
         },
         {
           "when": "resourceExtname == .arrow",
+          "command": "duckdb-viewer.viewFile",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceExtname == .ipc",
+          "command": "duckdb-viewer.viewFile",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceExtname == .json",
+          "command": "duckdb-viewer.viewFile",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceExtname == .jsonl",
+          "command": "duckdb-viewer.viewFile",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceExtname == .ndjson",
           "command": "duckdb-viewer.viewFile",
           "group": "navigation"
         }

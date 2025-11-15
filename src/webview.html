@@ -7,14 +7,14 @@
         style-src {{csp_source}} 'unsafe-inline';
         script-src 'nonce-{{nonce}}' 'unsafe-eval';
         worker-src blob:;
-        connect-src 
-            {{csp_source}} 
-            https://file+.vscode-resource.vscode-cdn.net 
-            blob: 
+        connect-src
+            {{csp_source}}
+            https://file+.vscode-resource.vscode-cdn.net
+            blob:
             https:;
     ">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DuckDB Viewer</title>
+  <title>DuckDB Viewer Pro</title>
   <script type="module" nonce="{{nonce}}" src="{{toolkit_uri}}"></script>
   <style>
     :root {
@@ -23,6 +23,7 @@
       --muted: var(--vscode-descriptionForeground);
       --accent: var(--vscode-button-background);
       --column-header-height: 44px;
+      --tab-height: 48px;
     }
     * {
       box-sizing: border-box;
@@ -59,12 +60,91 @@
     #status.error {
       color: var(--vscode-errorForeground);
     }
+
+    /* File Manager */
+    #file-manager {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 16px;
+      display: none;
+    }
+    .file-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .file-chip {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .file-chip button {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      padding: 0;
+      font-size: 14px;
+      opacity: 0.7;
+    }
+    .file-chip button:hover {
+      opacity: 1;
+    }
+
+    /* Tab Navigation */
+    .tab-nav {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 8px;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+    }
+    .tab-button {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 10px 16px;
+      cursor: pointer;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-button:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .tab-button.active {
+      background: var(--accent);
+      color: var(--vscode-button-foreground);
+    }
+
     main {
       flex: 1;
       display: flex;
       flex-direction: column;
       gap: 16px;
       min-height: 0;
+    }
+    .tab-content {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+    .tab-content.active {
+      display: flex;
     }
     .panel {
       background: var(--panel-bg);
@@ -242,7 +322,7 @@
       opacity: 0.6;
       cursor: default;
     }
-    #copy-sql {
+    #copy-sql, .secondary-button {
       background: transparent;
       color: inherit;
       border: 1px solid var(--panel-border);
@@ -256,6 +336,271 @@
       flex-direction: column;
       gap: 8px;
     }
+
+    /* Data Profile Styles */
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 16px;
+    }
+    .stat-card {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: 600;
+    }
+    .column-profile {
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--panel-border);
+      padding-bottom: 16px;
+    }
+    .column-profile:last-child {
+      border-bottom: none;
+    }
+    .column-name {
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .profile-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 12px;
+      font-size: 12px;
+    }
+    .profile-stat {
+      display: flex;
+      justify-content: space-between;
+    }
+    .profile-stat-label {
+      color: var(--muted);
+    }
+
+    /* Query Builder Styles */
+    .query-builder {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .builder-section {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .builder-section h3 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .column-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .column-tag {
+      background: var(--vscode-button-secondaryBackground);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .column-tag:hover {
+      background: var(--accent);
+      color: var(--vscode-button-foreground);
+    }
+    .column-tag.selected {
+      background: var(--accent);
+      color: var(--vscode-button-foreground);
+    }
+
+    /* Query History Styles */
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .history-item {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .history-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .history-query {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 12px;
+      margin-bottom: 8px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .history-meta {
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Chart Styles */
+    #chart-container {
+      min-height: 400px;
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow: auto;
+    }
+    .chart-config {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-group label {
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .form-group select, .form-group input {
+      border-radius: 6px;
+      border: 1px solid var(--panel-border);
+      background: var(--vscode-editor-background);
+      color: inherit;
+      padding: 8px;
+      font-size: 13px;
+    }
+
+    /* Export Styles */
+    .export-options {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* Pivot Table Styles */
+    .pivot-config {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .drop-zone {
+      background: var(--vscode-editor-background);
+      border: 2px dashed var(--panel-border);
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 100px;
+    }
+    .drop-zone h4 {
+      margin: 0 0 12px 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .drop-zone .column-list {
+      min-height: 50px;
+    }
+
+    /* Remote File Loader */
+    .url-input-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .url-input-group input {
+      flex: 1;
+      border-radius: 6px;
+      border: 1px solid var(--panel-border);
+      background: var(--vscode-editor-background);
+      color: inherit;
+      padding: 10px 14px;
+      font-size: 13px;
+    }
+
+    /* JOIN Builder */
+    .join-builder {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .join-table-selector {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .join-table-selector select {
+      flex: 1;
+      border-radius: 6px;
+      border: 1px solid var(--panel-border);
+      background: var(--vscode-editor-background);
+      color: inherit;
+      padding: 8px;
+    }
+    .join-type-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 8px;
+      background: var(--accent);
+      color: var(--vscode-button-foreground);
+      border-radius: 4px;
+    }
+
+    /* Template Library */
+    .template-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 12px;
+    }
+    .template-card {
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .template-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .template-title {
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .template-desc {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .button-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .scroll-container {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 8px;
+    }
   </style>
 </head>
 <body>
@@ -264,33 +609,212 @@
       <div id="status">Initializing…</div>
     </div>
 
-    <main>
-      <section class="panel" id="results-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Data Preview</h2>
-            <div id="row-count">Awaiting data…</div>
-          </div>
-          <input type="search" id="global-search" placeholder="Search across all columns" />
+    <!-- File Manager -->
+    <div id="file-manager">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="margin: 0; font-size: 14px;">Loaded Files</h3>
+        <div class="button-group">
+          <button id="load-url-btn" class="secondary-button">Load from URL</button>
+          <button id="load-file-btn" class="secondary-button">Load Local File</button>
         </div>
-        <div id="results-container">
-          <div class="empty-state">Load a file to see the first rows.</div>
-        </div>
-      </section>
+      </div>
+      <div class="file-list" id="file-list"></div>
+    </div>
 
-      <section class="panel" id="controls">
-        <div class="panel-heading">
-          <h2>SQL Preview</h2>
-          <div class="sql-actions">
-            <button id="copy-sql">Copy SQL</button>
-            <button id="run-query">Run Query</button>
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+      <button class="tab-button active" data-tab="data">📊 Data View</button>
+      <button class="tab-button" data-tab="profile">📈 Data Profile</button>
+      <button class="tab-button" data-tab="query-builder">🔧 Query Builder</button>
+      <button class="tab-button" data-tab="pivot">🔄 Pivot Table</button>
+      <button class="tab-button" data-tab="chart">📉 Charts</button>
+      <button class="tab-button" data-tab="history">🕐 History</button>
+      <button class="tab-button" data-tab="templates">📚 Templates</button>
+    </nav>
+
+    <main>
+      <!-- Data View Tab -->
+      <div class="tab-content active" data-tab="data">
+        <section class="panel" id="results-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Data Preview</h2>
+              <div id="row-count">Awaiting data…</div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <input type="search" id="global-search" placeholder="Search across all columns" />
+              <div class="export-options">
+                <button id="export-csv" class="secondary-button">Export CSV</button>
+                <button id="export-parquet" class="secondary-button">Export Parquet</button>
+                <button id="export-json" class="secondary-button">Export JSON</button>
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="sql-grid">
-          <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
-          <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
-        </div>
-      </section>
+          <div id="results-container">
+            <div class="empty-state">Load a file to see the first rows.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="controls">
+          <div class="panel-heading">
+            <h2>SQL Editor</h2>
+            <div class="sql-actions">
+              <button id="copy-sql">Copy SQL</button>
+              <button id="format-sql" class="secondary-button">Format</button>
+              <button id="run-query">Run Query</button>
+            </div>
+          </div>
+          <div class="sql-grid">
+            <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
+            <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Data Profile Tab -->
+      <div class="tab-content" data-tab="profile">
+        <section class="panel" style="flex: 1;">
+          <div class="panel-heading">
+            <h2>Data Profile & Statistics</h2>
+            <button id="refresh-profile" class="secondary-button">Refresh Profile</button>
+          </div>
+          <div class="scroll-container">
+            <div class="profile-grid" id="overview-stats"></div>
+            <div style="margin-top: 24px;">
+              <h3 style="margin: 0 0 16px 0;">Column Profiles</h3>
+              <div id="column-profiles"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Query Builder Tab -->
+      <div class="tab-content" data-tab="query-builder">
+        <section class="panel" style="flex: 1;">
+          <div class="panel-heading">
+            <h2>Visual Query Builder</h2>
+            <button id="build-query-btn">Generate SQL</button>
+          </div>
+          <div class="scroll-container">
+            <div class="query-builder" id="query-builder">
+              <div class="builder-section">
+                <h3>Select Columns</h3>
+                <div class="column-list" id="select-columns"></div>
+              </div>
+              <div class="builder-section">
+                <h3>Filter Conditions</h3>
+                <div id="filter-conditions">
+                  <button id="add-filter-btn" class="secondary-button">+ Add Filter</button>
+                </div>
+              </div>
+              <div class="builder-section">
+                <h3>Group By</h3>
+                <div class="column-list" id="groupby-columns"></div>
+              </div>
+              <div class="builder-section">
+                <h3>Order By</h3>
+                <div class="column-list" id="orderby-columns"></div>
+              </div>
+              <div class="builder-section">
+                <h3>Limit</h3>
+                <input type="number" id="limit-input" placeholder="No limit" style="width: 150px;">
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Pivot Table Tab -->
+      <div class="tab-content" data-tab="pivot">
+        <section class="panel" style="flex: 1;">
+          <div class="panel-heading">
+            <h2>Interactive Pivot Table</h2>
+            <button id="generate-pivot-btn">Generate Pivot</button>
+          </div>
+          <div class="scroll-container">
+            <div class="pivot-config">
+              <div class="drop-zone">
+                <h4>Rows</h4>
+                <div class="column-list" id="pivot-rows"></div>
+              </div>
+              <div class="drop-zone">
+                <h4>Columns</h4>
+                <div class="column-list" id="pivot-columns"></div>
+              </div>
+              <div class="drop-zone">
+                <h4>Values (Aggregate)</h4>
+                <div class="column-list" id="pivot-values"></div>
+              </div>
+            </div>
+            <div id="pivot-result-container"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Charts Tab -->
+      <div class="tab-content" data-tab="chart">
+        <section class="panel" style="flex: 1;">
+          <div class="panel-heading">
+            <h2>Data Visualization</h2>
+            <button id="generate-chart-btn">Generate Chart</button>
+          </div>
+          <div class="scroll-container">
+            <div class="chart-config">
+              <div class="form-group">
+                <label>Chart Type</label>
+                <select id="chart-type">
+                  <option value="bar">Bar Chart</option>
+                  <option value="line">Line Chart</option>
+                  <option value="scatter">Scatter Plot</option>
+                  <option value="pie">Pie Chart</option>
+                  <option value="histogram">Histogram</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>X-Axis Column</label>
+                <select id="chart-x-column"></select>
+              </div>
+              <div class="form-group">
+                <label>Y-Axis Column</label>
+                <select id="chart-y-column"></select>
+              </div>
+              <div class="form-group">
+                <label>Limit Rows</label>
+                <input type="number" id="chart-limit" value="100" placeholder="100">
+              </div>
+            </div>
+            <div id="chart-container"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- History Tab -->
+      <div class="tab-content" data-tab="history">
+        <section class="panel" style="flex: 1;">
+          <div class="panel-heading">
+            <h2>Query History</h2>
+            <button id="clear-history-btn" class="secondary-button">Clear History</button>
+          </div>
+          <div class="scroll-container">
+            <div class="history-list" id="history-list">
+              <div class="empty-state">No queries yet. Run a query to see it here.</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Templates Tab -->
+      <div class="tab-content" data-tab="templates">
+        <section class="panel" style="flex: 1;">
+          <div class="panel-heading">
+            <h2>Query Templates</h2>
+            <button id="save-template-btn" class="secondary-button">Save Current Query</button>
+          </div>
+          <div class="scroll-container">
+            <div class="template-grid" id="template-grid"></div>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
