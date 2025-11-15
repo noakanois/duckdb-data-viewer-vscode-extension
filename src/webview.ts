@@ -27,21 +27,46 @@ interface TableRow {
   display: string[];
 }
 
+type ColumnCategory = 'number' | 'string' | 'boolean' | 'temporal' | 'other';
+
+interface ColumnMetadata {
+  name: string;
+  arrowType: string;
+  category: ColumnCategory;
+  emoji: string;
+  tagline: string;
+}
+
 interface TableData {
   columns: string[];
   rows: TableRow[];
+  columnMetadata: ColumnMetadata[];
 }
 
 let db: duckdb.AsyncDuckDB | null = null;
 let connection: duckdb.AsyncDuckDBConnection | null = null;
 let duckdbInitializationPromise: Promise<void> | null = null;
 let currentTableData: TableData | null = null;
+let currentRelation: { name: string; identifier: string } | null = null;
 let columnFilters: string[] = [];
 let globalFilter = '';
 let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex: -1, direction: null };
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
 const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
+
+// Hyperdrive UI references
+const hyperdriveBanner = document.getElementById('hyperdrive-banner');
+const toggleHyperdriveButton = document.getElementById('toggle-hyperdrive') as HTMLButtonElement | null;
+const chaosQueryButton = document.getElementById('chaos-query') as HTMLButtonElement | null;
+const querySuggestionsList = document.getElementById('query-suggestions');
+const dataProphecyElement = document.getElementById('data-prophecy');
+const remixProphecyButton = document.getElementById('remix-prophecy') as HTMLButtonElement | null;
+const columnGlyphsElement = document.getElementById('column-glyphs');
+const cosmicMoodElement = document.getElementById('cosmic-mood');
+const hyperdriveBadgeElement = document.getElementById('hyperdrive-badge');
+
+let lastSparkleTimestamp = 0;
 
 // --- Event Listeners (Moved to top) ---
 
@@ -96,6 +121,50 @@ if (copySqlButton) {
     }
   });
 }
+
+if (toggleHyperdriveButton) {
+  toggleHyperdriveButton.addEventListener('click', () => {
+    toggleHyperdrive();
+  });
+}
+
+if (chaosQueryButton) {
+  chaosQueryButton.addEventListener('click', () => {
+    unleashChaosQuery().catch(reportError);
+  });
+}
+
+if (remixProphecyButton) {
+  remixProphecyButton.addEventListener('click', () => {
+    updateDataProphecy(true);
+  });
+}
+
+if (querySuggestionsList) {
+  querySuggestionsList.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement;
+    if (target?.dataset?.sql) {
+      const sql = target.dataset.sql;
+      sqlInput.value = sql;
+      runQuery(sql).catch(reportError);
+      spawnSparkleTrail(event as PointerEvent);
+    }
+  });
+}
+
+document.addEventListener('pointermove', (event) => {
+  const now = Date.now();
+  if (!document.body.classList.contains('hyperdrive')) {
+    return;
+  }
+  if (now - lastSparkleTimestamp < 120) {
+    return;
+  }
+  lastSparkleTimestamp = now;
+  spawnSparkleTrail(event);
+});
+
+updateCosmicControlsAvailability();
 
 // --- Core Functions ---
 
@@ -192,6 +261,13 @@ async function handleFileLoad(fileName: string, fileData: any) {
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
 
+  currentRelation = {
+    name: loadResult.relationName,
+    identifier: loadResult.relationIdentifier,
+  };
+  updateCosmicControlsAvailability();
+  updateCosmicMood();
+
   if (controls) controls.style.display = 'flex';
   if (resultsContainer) resultsContainer.style.display = 'block';
 
@@ -258,11 +334,13 @@ function renderResults(table: Table | null) {
     currentTableData = null;
     tableBodyElement = null;
     updateRowCount(0, 0);
+    resetCosmicPanels();
     return;
   }
 
   const rows: TableRow[] = [];
   const columns = table.schema.fields.map((field) => field.name);
+  const sampleValues = columns.map(() => new Set<string>());
 
   for (let i = 0; i < table.numRows; i++) {
     const row = table.get(i);
@@ -270,20 +348,27 @@ function renderResults(table: Table | null) {
 
     const raw: any[] = [];
     const display: string[] = [];
-    for (const field of table.schema.fields) {
+    table.schema.fields.forEach((field, columnIndex) => {
       const value = row[field.name];
       raw.push(value);
-      display.push(formatCell(value));
-    }
+      const formatted = formatCell(value);
+      display.push(formatted);
+      if (formatted && sampleValues[columnIndex].size < 3) {
+        sampleValues[columnIndex].add(formatted);
+      }
+    });
     rows.push({ raw, display });
   }
 
-  currentTableData = { columns, rows };
+  const columnMetadata = buildColumnMetadata(table, sampleValues);
+
+  currentTableData = { columns, rows, columnMetadata };
   columnFilters = columns.map(() => '');
   globalFilter = '';
   sortState = { columnIndex: -1, direction: null };
   if (globalSearchInput) {
     globalSearchInput.value = '';
+    globalSearchInput.placeholder = 'Search the data nebula…';
   }
 
   buildTableSkeleton(columns);
@@ -291,6 +376,11 @@ function renderResults(table: Table | null) {
 
   resultsContainer.style.display = 'block';
   resultsContainer.scrollTop = 0;
+  populateQuerySpellbook();
+  updateColumnGlyphs();
+  updateDataProphecy();
+  updateCosmicMood();
+  updateCosmicAura(table.numRows, columns.length);
 }
 
 function buildTableSkeleton(columns: string[]) {
@@ -309,12 +399,19 @@ function buildTableSkeleton(columns: string[]) {
     button.type = 'button';
     button.className = 'header-button';
 
+    const labelWrapper = document.createElement('span');
+    labelWrapper.className = 'column-label-wrapper';
+    const glyph = document.createElement('span');
+    glyph.className = 'glyph-icon';
+    const metadata = currentTableData?.columnMetadata[index];
+    glyph.textContent = metadata?.emoji ?? '⬡';
     const label = document.createElement('span');
     label.textContent = column;
+    labelWrapper.append(glyph, label);
     const indicator = document.createElement('span');
     indicator.className = 'sort-indicator';
 
-    button.append(label, indicator);
+    button.append(labelWrapper, indicator);
     button.addEventListener('click', () => toggleSort(index));
     th.appendChild(button);
     headerRow.appendChild(th);
@@ -327,7 +424,8 @@ function buildTableSkeleton(columns: string[]) {
     const th = document.createElement('th');
     const input = document.createElement('input');
     input.type = 'search';
-    input.placeholder = 'Filter';
+    const metadata = currentTableData?.columnMetadata[index];
+    input.placeholder = metadata ? `Filter ${metadata.category} vibes` : 'Filter';
     input.value = columnFilters[index] ?? '';
     input.setAttribute('aria-label', `Filter column ${column}`);
     input.addEventListener('input', () => {
@@ -456,7 +554,14 @@ function updateRowCount(visible: number, total: number) {
   if (!rowCountLabel) {
     return;
   }
-  rowCountLabel.textContent = '';
+  if (total === 0) {
+    rowCountLabel.textContent = 'No rows shimmering yet.';
+    return;
+  }
+
+  const vibes = ['luminous', 'hyperspatial', 'electric', 'chromatic', 'quantum'];
+  const vibe = vibes[(visible + total) % vibes.length];
+  rowCountLabel.innerHTML = `<strong>${visible.toLocaleString()}</strong> ${vibe} rows visible · ${total.toLocaleString()} total in orbit`;
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
@@ -497,6 +602,308 @@ function formatCell(value: any): string {
     }
   }
   return String(value);
+}
+
+function buildColumnMetadata(table: Table, sampleValues: Set<string>[]): ColumnMetadata[] {
+  return table.schema.fields.map((field, index) => {
+    const typeLabel = typeof field.type?.toString === 'function' ? field.type.toString() : 'unknown';
+    const category = categorizeArrowType(typeLabel);
+    const emoji = pickEmojiForCategory(category);
+    const samples = Array.from(sampleValues[index] ?? []);
+    const tagline = craftColumnTagline(field.name, category, samples, typeLabel);
+    return {
+      name: field.name,
+      arrowType: typeLabel,
+      category,
+      emoji,
+      tagline,
+    };
+  });
+}
+
+function categorizeArrowType(typeLabel: string): ColumnCategory {
+  const normalized = typeLabel.toLowerCase();
+  if (normalized.includes('int') || normalized.includes('float') || normalized.includes('decimal') || normalized.includes('double')) {
+    return 'number';
+  }
+  if (normalized.includes('bool')) {
+    return 'boolean';
+  }
+  if (normalized.includes('date') || normalized.includes('time') || normalized.includes('timestamp')) {
+    return 'temporal';
+  }
+  if (normalized.includes('utf') || normalized.includes('string') || normalized.includes('binary')) {
+    return 'string';
+  }
+  return 'other';
+}
+
+function pickEmojiForCategory(category: ColumnCategory): string {
+  switch (category) {
+    case 'number':
+      return '🔢';
+    case 'string':
+      return '🔤';
+    case 'boolean':
+      return '🌓';
+    case 'temporal':
+      return '⏳';
+    default:
+      return '🧬';
+  }
+}
+
+function craftColumnTagline(name: string, category: ColumnCategory, samples: string[], typeLabel: string): string {
+  const sampleSnippet = samples.length ? `e.g. ${samples.slice(0, 2).join(' · ')}` : `type ${typeLabel}`;
+  const channelPhrases: Record<ColumnCategory, string[]> = {
+    number: ['calibrates gravity wells', 'powers nebula math', 'tracks cosmic frequencies'],
+    string: ['whispers galactic names', 'stores cosmic myths', 'encodes interstellar lore'],
+    boolean: ['toggles wormholes', 'flips reality switches', 'controls starlight or shadow'],
+    temporal: ['measures chronostreams', 'anchors timeline echoes', 'charts orbital dawns'],
+    other: ['houses quantum curios', 'guards enigmatic relics', 'contains uncharted matter'],
+  };
+  const phrases = channelPhrases[category];
+  const descriptor = phrases[Math.floor(Math.random() * phrases.length)];
+  return `${descriptor}; ${sampleSnippet}`;
+}
+
+function formatColumnIdentifier(column: string): string {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(column) ? column : `"${column.replace(/"/g, '""')}"`;
+}
+
+function populateQuerySpellbook() {
+  if (!querySuggestionsList) {
+    return;
+  }
+  if (!currentTableData || !currentRelation) {
+    querySuggestionsList.innerHTML = '<li>Awaiting data to brew spells…</li>';
+    return;
+  }
+
+  const suggestions = generateQuerySuggestions();
+  if (!suggestions.length) {
+    querySuggestionsList.innerHTML = '<li>The spellbook is momentarily blank.</li>';
+    return;
+  }
+
+  querySuggestionsList.innerHTML = '';
+  suggestions.forEach((suggestion) => {
+    const li = document.createElement('li');
+    const description = document.createElement('div');
+    description.textContent = suggestion.label;
+    const actions = document.createElement('div');
+    actions.className = 'suggestion-actions';
+    const sqlPreview = document.createElement('code');
+    sqlPreview.textContent = suggestion.preview;
+    const castButton = document.createElement('button');
+    castButton.type = 'button';
+    castButton.textContent = 'Cast spell';
+    castButton.dataset.sql = suggestion.sql;
+    actions.append(sqlPreview, castButton);
+    li.append(description, actions);
+    querySuggestionsList.appendChild(li);
+  });
+}
+
+function generateQuerySuggestions(): Array<{ label: string; sql: string; preview: string }> {
+  if (!currentTableData || !currentRelation) {
+    return [];
+  }
+
+  const { columnMetadata } = currentTableData;
+  const sampleSize = Math.max(currentTableData.rows.length, 1);
+  const limit = Math.min(50, Math.max(7, Math.round(sampleSize / 4)));
+  const base = currentRelation.identifier;
+
+  const numericColumn = columnMetadata.find((meta) => meta.category === 'number');
+  const temporalColumn = columnMetadata.find((meta) => meta.category === 'temporal');
+  const stringColumn = columnMetadata.find((meta) => meta.category === 'string');
+
+  const suggestions: Array<{ label: string; sql: string; preview: string }> = [
+    {
+      label: 'Sample the cosmic lattice',
+      sql: `SELECT * FROM ${base}\nORDER BY RANDOM()\nLIMIT ${limit};`,
+      preview: `Random ${limit} rows`,
+    },
+    {
+      label: 'Count the luminous bodies',
+      sql: `SELECT COUNT(*) AS cosmic_count\nFROM ${base};`,
+      preview: 'COUNT(*) cosmos',
+    },
+  ];
+
+  if (numericColumn) {
+    const numericIdentifier = formatColumnIdentifier(numericColumn.name);
+    suggestions.push({
+      label: `Amplify ${numericColumn.name} harmonics`,
+      sql: `SELECT ${numericIdentifier}, AVG(${numericIdentifier}) AS avg_${numericColumn.name}\nFROM ${base}\nGROUP BY ${numericIdentifier}\nORDER BY avg_${numericColumn.name} DESC\nLIMIT 15;`,
+      preview: `AVG(${numericColumn.name})`,
+    });
+  }
+
+  if (temporalColumn && stringColumn) {
+    const temporalIdentifier = formatColumnIdentifier(temporalColumn.name);
+    const stringIdentifier = formatColumnIdentifier(stringColumn.name);
+    suggestions.push({
+      label: `Plot ${temporalColumn.name} constellations by ${stringColumn.name}`,
+      sql: `SELECT ${stringIdentifier}, MIN(${temporalIdentifier}) AS first_${temporalColumn.name}, MAX(${temporalIdentifier}) AS last_${temporalColumn.name}\nFROM ${base}\nGROUP BY ${stringIdentifier}\nORDER BY last_${temporalColumn.name} DESC\nLIMIT 25;`,
+      preview: `MIN/MAX ${temporalColumn.name}`,
+    });
+  }
+
+  if (suggestions.length < 4 && stringColumn) {
+    const stringIdentifier = formatColumnIdentifier(stringColumn.name);
+    suggestions.push({
+      label: `Find the rarest ${stringColumn.name} sigils`,
+      sql: `SELECT ${stringIdentifier}, COUNT(*) AS appearances\nFROM ${base}\nGROUP BY ${stringIdentifier}\nORDER BY appearances ASC\nLIMIT 20;`,
+      preview: `Rare ${stringColumn.name}`,
+    });
+  }
+
+  return suggestions;
+}
+
+function updateColumnGlyphs() {
+  if (!columnGlyphsElement) {
+    return;
+  }
+  if (!currentTableData) {
+    columnGlyphsElement.textContent = 'Load data to decode glyphs.';
+    return;
+  }
+
+  columnGlyphsElement.innerHTML = '';
+  currentTableData.columnMetadata.forEach((meta) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'glyph-item';
+    const icon = document.createElement('span');
+    icon.className = 'glyph-icon';
+    icon.textContent = meta.emoji;
+    const copy = document.createElement('div');
+    const heading = document.createElement('strong');
+    heading.textContent = meta.name;
+    const tagline = document.createElement('div');
+    tagline.className = 'glyph-copy';
+    tagline.textContent = meta.tagline;
+    copy.append(heading, tagline);
+    wrapper.append(icon, copy);
+    columnGlyphsElement.appendChild(wrapper);
+  });
+}
+
+function updateDataProphecy(remix = false) {
+  if (!dataProphecyElement) {
+    return;
+  }
+  if (!currentTableData || !currentRelation) {
+    dataProphecyElement.textContent = 'No omens detected yet.';
+    return;
+  }
+
+  const totalRows = currentTableData.rows.length;
+  const columnCount = currentTableData.columns.length;
+  if (currentTableData.columnMetadata.length === 0) {
+    dataProphecyElement.textContent = `The dataset "${currentRelation.name}" is a silent void.`;
+    return;
+  }
+  const auraMood = ['radiant', 'rebellious', 'dreaming', 'phase-shifting', 'cosmic'];
+  const baseMoodIndex = (totalRows + columnCount) % auraMood.length;
+  const selectedMood = remix ? auraMood[Math.floor(Math.random() * auraMood.length)] : auraMood[baseMoodIndex];
+  const highlightedColumn = currentTableData.columnMetadata[Math.floor(Math.random() * currentTableData.columnMetadata.length)];
+  const prophecy = `The ${selectedMood} dataset "${currentRelation.name}" spans ${columnCount} glyphs and ${totalRows.toLocaleString()} rows. Column ${highlightedColumn.emoji} ${highlightedColumn.name} ${highlightedColumn.tagline}.`;
+  dataProphecyElement.textContent = prophecy;
+}
+
+function updateCosmicMood() {
+  if (!cosmicMoodElement) {
+    return;
+  }
+  if (!currentTableData) {
+    cosmicMoodElement.textContent = 'Load a data file to awaken the nebula.';
+    return;
+  }
+
+  const descriptors = ['vibrating', 'howling', 'glimmering', 'supersonic', 'kaleidoscopic'];
+  const descriptor = descriptors[currentTableData.columns.length % descriptors.length];
+  const rowEnergy = currentTableData.rows.length.toLocaleString();
+  cosmicMoodElement.textContent = `Nebula status: ${descriptor}. ${rowEnergy} rows are bending around your cursor.`;
+}
+
+function updateCosmicAura(totalRows: number, columns: number) {
+  const hue = (columns * 47 + totalRows) % 360;
+  document.body.style.setProperty('--aura-hue', `${hue}deg`);
+  if (hyperdriveBadgeElement) {
+    hyperdriveBadgeElement.textContent = `Aura hue calibrated to ${hue}°. ${columns} glyphs detected.`;
+  }
+}
+
+async function unleashChaosQuery() {
+  if (!currentRelation) {
+    updateStatus('No relation loaded yet.');
+    return;
+  }
+  const sql = buildChaosQuery();
+  sqlInput.value = sql;
+  await runQuery(sql);
+}
+
+function buildChaosQuery(): string {
+  if (!currentRelation || !currentTableData) {
+    return sqlInput.value;
+  }
+  const limitOptions = [13, 21, 34, 55, 89];
+  const limit = limitOptions[Math.floor(Math.random() * limitOptions.length)];
+  const randomColumn = currentTableData.columns[Math.floor(Math.random() * currentTableData.columns.length)];
+  const direction = Math.random() > 0.5 ? 'ASC' : 'DESC';
+  const randomIdentifier = formatColumnIdentifier(randomColumn);
+  return `SELECT * FROM ${currentRelation.identifier}\nORDER BY ${randomIdentifier} ${direction}, RANDOM()\nLIMIT ${limit};`;
+}
+
+function toggleHyperdrive() {
+  const engaged = document.body.classList.toggle('hyperdrive');
+  if (hyperdriveBanner) {
+    hyperdriveBanner.style.display = engaged ? 'block' : 'none';
+  }
+  if (toggleHyperdriveButton) {
+    toggleHyperdriveButton.textContent = engaged ? 'Disengage Hyperdrive' : 'Ignite Hyperdrive';
+  }
+  if (hyperdriveBadgeElement) {
+    hyperdriveBadgeElement.textContent = engaged ? 'Hyperdrive humming with cosmic code.' : 'Awaiting ignition spark…';
+  }
+  if (engaged) {
+    spawnSparkleTrail();
+  }
+}
+
+function spawnSparkleTrail(event?: PointerEvent) {
+  const sparkle = document.createElement('div');
+  sparkle.className = 'sparkle-trail';
+  const x = event?.clientX ?? Math.random() * window.innerWidth;
+  const y = event?.clientY ?? Math.random() * window.innerHeight;
+  sparkle.style.left = `${x}px`;
+  sparkle.style.top = `${y}px`;
+  document.body.appendChild(sparkle);
+  window.setTimeout(() => sparkle.remove(), 1000);
+}
+
+function resetCosmicPanels() {
+  populateQuerySpellbook();
+  if (columnGlyphsElement) {
+    columnGlyphsElement.textContent = 'Load data to decode glyphs.';
+  }
+  if (cosmicMoodElement) {
+    cosmicMoodElement.textContent = 'Load a data file to awaken the nebula.';
+  }
+  if (dataProphecyElement) {
+    dataProphecyElement.textContent = 'No omens detected yet.';
+  }
+}
+
+function updateCosmicControlsAvailability() {
+  if (chaosQueryButton) {
+    chaosQueryButton.disabled = !currentRelation;
+    chaosQueryButton.title = currentRelation ? 'Fire a randomized SQL incantation.' : 'Load a file to summon chaos queries.';
+  }
 }
 
 // ---

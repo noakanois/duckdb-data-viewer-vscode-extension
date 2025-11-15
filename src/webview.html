@@ -35,6 +35,49 @@
       color: var(--vscode-editor-foreground);
       height: 100vh;
       display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(
+        circle at 20% 20%,
+        rgba(176, 128, 255, 0.12),
+        transparent 55%
+      ),
+      radial-gradient(
+        circle at 80% 10%,
+        rgba(128, 255, 219, 0.12),
+        transparent 45%
+      ),
+      radial-gradient(
+        circle at 50% 80%,
+        rgba(255, 119, 119, 0.12),
+        transparent 40%
+      );
+      opacity: 0.6;
+      pointer-events: none;
+      transition: opacity 500ms ease;
+    }
+    body.hyperdrive::before {
+      opacity: 0.9;
+      filter: hue-rotate(var(--aura-hue, 120deg));
+      animation: auroraPulse 6s linear infinite;
+    }
+    body.hyperdrive {
+      --panel-bg: rgba(12, 10, 31, 0.78);
+      --panel-border: rgba(124, 92, 255, 0.6);
+      background: radial-gradient(circle at 20% 20%, rgba(41, 20, 74, 0.82), transparent 70%),
+        radial-gradient(circle at 80% 30%, rgba(10, 52, 67, 0.7), transparent 65%),
+        var(--vscode-editor-background);
+      backdrop-filter: blur(6px);
+    }
+    @keyframes auroraPulse {
+      0% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(1); opacity: 0.8; }
     }
     .app-shell {
       display: flex;
@@ -232,7 +275,7 @@
       font-size: 13px;
       padding: 8px 14px;
       cursor: pointer;
-    }
+      }
     #run-query {
       background-color: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
@@ -256,15 +299,238 @@
       flex-direction: column;
       gap: 8px;
     }
+    .hyperdrive-banner {
+      display: none;
+      background: linear-gradient(120deg, rgba(115, 76, 255, 0.85), rgba(0, 199, 190, 0.78));
+      border-radius: 12px;
+      padding: 14px 18px;
+      color: white;
+      box-shadow: 0 12px 24px rgba(15, 5, 38, 0.4);
+      position: relative;
+      overflow: hidden;
+    }
+    .hyperdrive-banner::after {
+      content: '';
+      position: absolute;
+      top: -40%;
+      left: 10%;
+      width: 160px;
+      height: 160px;
+      background: radial-gradient(circle, rgba(255,255,255,0.4), transparent 70%);
+      filter: blur(2px);
+      animation: sweep 8s linear infinite;
+    }
+    @keyframes sweep {
+      from { transform: translateX(-40%); }
+      to { transform: translateX(120%); }
+    }
+    .hyperdrive-banner strong {
+      font-size: 14px;
+      letter-spacing: 0.04em;
+    }
+    .hyperdrive-banner span {
+      display: block;
+      font-size: 12px;
+      margin-top: 4px;
+      opacity: 0.85;
+    }
+    .cosmic-panel {
+      position: relative;
+      border-image: linear-gradient(120deg, rgba(124, 92, 255, 0.6), rgba(0, 199, 190, 0.4)) 1;
+      overflow: hidden;
+    }
+    .cosmic-panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at top left, rgba(123, 92, 255, 0.18), transparent 55%),
+        radial-gradient(circle at bottom right, rgba(0, 199, 190, 0.18), transparent 55%);
+      opacity: 0.6;
+    }
+    .cosmic-panel > * {
+      position: relative;
+      z-index: 1;
+    }
+    .hyperdrive-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    #toggle-hyperdrive {
+      background: linear-gradient(135deg, rgba(115, 76, 255, 0.85), rgba(0, 199, 190, 0.85));
+      color: white;
+      border: none;
+      box-shadow: 0 6px 16px rgba(29, 12, 71, 0.35);
+      transition: transform 200ms ease, box-shadow 200ms ease;
+    }
+    #toggle-hyperdrive:hover {
+      transform: translateY(-1px) scale(1.02);
+      box-shadow: 0 10px 24px rgba(29, 12, 71, 0.4);
+    }
+    #chaos-query {
+      border-color: rgba(124, 92, 255, 0.6);
+      color: rgba(124, 92, 255, 0.9);
+      background: rgba(124, 92, 255, 0.12);
+    }
+    .cosmic-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .cosmic-card {
+      border: 1px solid rgba(124, 92, 255, 0.22);
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: rgba(10, 8, 22, 0.08);
+      backdrop-filter: blur(4px);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 120px;
+    }
+    .cosmic-card h3 {
+      margin: 0;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: rgba(124, 92, 255, 0.9);
+    }
+    #cosmic-mood {
+      font-size: 12px;
+      color: rgba(124, 92, 255, 0.85);
+      margin: 4px 0 0 0;
+    }
+    .suggestion-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: 12px;
+    }
+    .suggestion-list li {
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .suggestion-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .suggestion-actions button {
+      background: rgba(124, 92, 255, 0.15);
+      border-color: rgba(124, 92, 255, 0.4);
+      color: rgba(124, 92, 255, 0.9);
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    #data-prophecy {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+    #remix-prophecy {
+      align-self: flex-start;
+      background: rgba(0, 199, 190, 0.14);
+      border-color: rgba(0, 199, 190, 0.5);
+      color: rgba(0, 199, 190, 0.9);
+      font-size: 11px;
+      padding: 6px 10px;
+    }
+    .glyph-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 180px;
+      overflow: auto;
+    }
+    .glyph-item {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .glyph-icon {
+      font-size: 20px;
+      line-height: 1;
+    }
+    .glyph-copy {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .column-label-wrapper {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .column-label-wrapper .glyph-icon {
+      font-size: 14px;
+      opacity: 0.85;
+    }
+    .sparkle-trail {
+      position: fixed;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      pointer-events: none;
+      background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(124, 92, 255, 0.7));
+      box-shadow: 0 0 12px rgba(124, 92, 255, 0.6);
+      opacity: 0;
+      animation: sparkleFade 1s ease forwards;
+    }
+    @keyframes sparkleFade {
+      from { opacity: 1; transform: scale(1); }
+      to { opacity: 0; transform: scale(0); }
+    }
   </style>
 </head>
 <body>
   <div class="app-shell">
+    <div class="hyperdrive-banner" id="hyperdrive-banner">
+      <strong>Hyperdrive Engaged</strong>
+      <span id="hyperdrive-badge">Awaiting ignition spark…</span>
+    </div>
     <div id="status-wrapper">
       <div id="status">Initializing…</div>
     </div>
 
     <main>
+      <section class="panel cosmic-panel" id="cosmic-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>DuckDB Hyperdrive</h2>
+            <p id="cosmic-mood">Load a data file to awaken the nebula.</p>
+          </div>
+          <div class="hyperdrive-controls">
+            <button id="toggle-hyperdrive">Ignite Hyperdrive</button>
+            <button id="chaos-query">Unleash Chaos Query</button>
+          </div>
+        </div>
+        <div class="cosmic-grid">
+          <div class="cosmic-card">
+            <h3>Query Spellbook</h3>
+            <ul class="suggestion-list" id="query-suggestions">
+              <li>Awaiting data to brew spells…</li>
+            </ul>
+          </div>
+          <div class="cosmic-card">
+            <h3>Data Prophecy</h3>
+            <p id="data-prophecy">No omens detected yet.</p>
+            <button id="remix-prophecy">Remix Prophecy</button>
+          </div>
+          <div class="cosmic-card">
+            <h3>Column Glyphs</h3>
+            <div class="glyph-list" id="column-glyphs">Load data to decode glyphs.</div>
+          </div>
+        </div>
+      </section>
       <section class="panel" id="results-panel">
         <div class="panel-heading">
           <div>
