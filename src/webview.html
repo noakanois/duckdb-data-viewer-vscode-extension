@@ -7,14 +7,14 @@
         style-src {{csp_source}} 'unsafe-inline';
         script-src 'nonce-{{nonce}}' 'unsafe-eval';
         worker-src blob:;
-        connect-src 
-            {{csp_source}} 
-            https://file+.vscode-resource.vscode-cdn.net 
-            blob: 
+        connect-src
+            {{csp_source}}
+            https://file+.vscode-resource.vscode-cdn.net
+            blob:
             https:;
     ">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DuckDB Viewer</title>
+  <title>DuckDB Viewer - REVOLUTIONARY EDITION</title>
   <script type="module" nonce="{{nonce}}" src="{{toolkit_uri}}"></script>
   <style>
     :root {
@@ -23,10 +23,20 @@
       --muted: var(--vscode-descriptionForeground);
       --accent: var(--vscode-button-background);
       --column-header-height: 44px;
+
+      /* REVOLUTIONARY CYBERPUNK COLORS */
+      --neon-cyan: #00ffff;
+      --neon-pink: #ff00ff;
+      --neon-green: #00ff00;
+      --neon-purple: #b700ff;
+      --cyber-bg: rgba(10, 0, 30, 0.95);
+      --cyber-glow: 0 0 20px var(--neon-cyan), 0 0 40px var(--neon-cyan);
     }
+
     * {
       box-sizing: border-box;
     }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0;
@@ -35,13 +45,213 @@
       color: var(--vscode-editor-foreground);
       height: 100vh;
       display: flex;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
     }
+
+    /* MATRIX RAIN CANVAS */
+    #matrix-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s ease;
+    }
+
+    #matrix-canvas.active {
+      opacity: 0.3;
+    }
+
+    /* PARTICLE EXPLOSION CANVAS */
+    #particle-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      pointer-events: none;
+    }
+
+    /* 3D VISUALIZATION CANVAS */
+    #viz-canvas {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 80%;
+      height: 80%;
+      z-index: 10000;
+      border-radius: 20px;
+      box-shadow: 0 0 100px rgba(0, 255, 255, 0.5);
+      display: none;
+    }
+
+    #viz-canvas.active {
+      display: block;
+    }
+
+    /* ACHIEVEMENT NOTIFICATION */
+    .achievement {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: linear-gradient(135deg, rgba(255, 0, 255, 0.9), rgba(0, 255, 255, 0.9));
+      color: white;
+      padding: 20px 30px;
+      border-radius: 15px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(255, 0, 255, 0.5);
+      z-index: 10001;
+      animation: achievementSlide 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+      font-weight: bold;
+      font-size: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+    }
+
+    @keyframes achievementSlide {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    /* AI ASSISTANT */
+    #ai-assistant {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 50%;
+      box-shadow: 0 10px 40px rgba(102, 126, 234, 0.5);
+      cursor: pointer;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      animation: float 3s ease-in-out infinite;
+      transition: transform 0.3s ease;
+    }
+
+    #ai-assistant:hover {
+      transform: scale(1.1);
+    }
+
+    #ai-assistant.talking {
+      animation: pulse 0.5s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-20px); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.2); }
+    }
+
+    /* AI SPEECH BUBBLE */
+    .ai-bubble {
+      position: fixed;
+      bottom: 120px;
+      right: 20px;
+      background: rgba(30, 30, 50, 0.95);
+      color: var(--neon-cyan);
+      padding: 15px 20px;
+      border-radius: 15px;
+      max-width: 300px;
+      z-index: 1001;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(0, 255, 255, 0.2);
+      border: 2px solid var(--neon-cyan);
+      font-size: 14px;
+      animation: fadeInUp 0.3s ease;
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     .app-shell {
       display: flex;
       flex-direction: column;
       gap: 16px;
       width: 100%;
+      transition: all 0.3s ease;
     }
+
+    /* CYBERPUNK MODE */
+    body.cyberpunk {
+      background: linear-gradient(135deg, #0a000a 0%, #1a0033 50%, #0a001a 100%);
+    }
+
+    body.cyberpunk .panel {
+      background: var(--cyber-bg);
+      border: 2px solid var(--neon-purple);
+      box-shadow: var(--cyber-glow);
+    }
+
+    body.cyberpunk #status-wrapper {
+      background: var(--cyber-bg);
+      border: 2px solid var(--neon-cyan);
+      box-shadow: 0 0 20px var(--neon-cyan);
+    }
+
+    body.cyberpunk table {
+      color: var(--neon-cyan);
+    }
+
+    body.cyberpunk thead th {
+      background: rgba(183, 0, 255, 0.2);
+      color: var(--neon-pink);
+      text-shadow: 0 0 10px var(--neon-pink);
+    }
+
+    body.cyberpunk tbody tr:hover {
+      background: rgba(0, 255, 255, 0.1);
+      box-shadow: inset 0 0 20px rgba(0, 255, 255, 0.3);
+    }
+
+    /* HOLOGRAPHIC MODE */
+    body.holographic .panel {
+      transform-style: preserve-3d;
+      perspective: 1000px;
+      animation: holographicFloat 4s ease-in-out infinite;
+    }
+
+    @keyframes holographicFloat {
+      0%, 100% {
+        transform: rotateX(0deg) rotateY(0deg);
+      }
+      25% {
+        transform: rotateX(2deg) rotateY(-2deg);
+      }
+      50% {
+        transform: rotateX(-2deg) rotateY(2deg);
+      }
+      75% {
+        transform: rotateX(2deg) rotateY(2deg);
+      }
+    }
+
     #status-wrapper {
       background: var(--panel-bg);
       border: 1px solid var(--panel-border);
@@ -51,14 +261,47 @@
       align-items: center;
       gap: 12px;
       min-height: 56px;
+      transition: all 0.3s ease;
     }
+
     #status {
       font-weight: 500;
       flex: 1;
     }
+
     #status.error {
       color: var(--vscode-errorForeground);
     }
+
+    /* MODE TOGGLE BUTTONS */
+    .mode-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .mode-btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255, 255, 255, 0.05);
+      color: inherit;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s ease;
+    }
+
+    .mode-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
+    }
+
+    .mode-btn.active {
+      background: var(--accent);
+      color: var(--vscode-button-foreground);
+      box-shadow: 0 0 15px var(--accent);
+    }
+
     main {
       flex: 1;
       display: flex;
@@ -66,6 +309,7 @@
       gap: 16px;
       min-height: 0;
     }
+
     .panel {
       background: var(--panel-bg);
       border: 1px solid var(--panel-border);
@@ -75,7 +319,9 @@
       flex-direction: column;
       gap: 12px;
       min-height: 0;
+      transition: all 0.3s ease;
     }
+
     .panel-heading {
       display: flex;
       justify-content: space-between;
@@ -83,16 +329,19 @@
       gap: 16px;
       flex-wrap: wrap;
     }
+
     .panel-heading h2 {
       margin: 0;
       font-size: 16px;
       font-weight: 600;
     }
+
     .panel-heading p {
       margin: 2px 0 0 0;
       font-size: 12px;
       color: var(--muted);
     }
+
     #global-search {
       flex: 1;
       min-width: 220px;
@@ -101,10 +350,18 @@
       background: var(--vscode-editor-background);
       color: inherit;
       padding: 8px 12px;
+      transition: all 0.2s ease;
     }
+
+    body.cyberpunk #global-search {
+      border: 2px solid var(--neon-cyan);
+      box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+    }
+
     #results-panel {
       flex: 1;
     }
+
     #results-container {
       display: none;
       flex: 1;
@@ -114,12 +371,14 @@
       background: var(--vscode-editor-background);
       box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
     }
+
     table {
       width: 100%;
       border-collapse: separate;
       border-spacing: 0;
       font-size: 13px;
     }
+
     thead th {
       background: var(--panel-bg);
       text-align: left;
@@ -127,32 +386,39 @@
       border-bottom: 1px solid var(--panel-border);
       padding: 0;
     }
+
     thead .column-row th {
       position: sticky;
       top: 0;
       z-index: 2;
     }
+
     thead .filter-row th {
       position: sticky;
       top: var(--column-header-height);
       z-index: 1;
       background: var(--panel-bg);
     }
+
     th, td {
       padding: 10px 12px;
       border-bottom: 1px solid var(--panel-border);
     }
+
     tbody tr:nth-child(even) {
       background: rgba(255, 255, 255, 0.02);
     }
+
     tbody tr:hover {
       background: rgba(255, 255, 255, 0.06);
     }
+
     .empty-row {
       text-align: center;
       font-style: italic;
       color: var(--muted);
     }
+
     .header-button {
       width: 100%;
       background: none;
@@ -166,18 +432,22 @@
       padding: 10px 12px;
       cursor: pointer;
     }
+
     .header-button .sort-indicator {
       font-size: 10px;
       color: var(--muted);
       width: 10px;
       text-align: right;
     }
+
     .header-button[data-sort="asc"] .sort-indicator::after {
       content: "▲";
     }
+
     .header-button[data-sort="desc"] .sort-indicator::after {
       content: "▼";
     }
+
     .filter-row input {
       width: 100%;
       border: none;
@@ -187,25 +457,30 @@
       color: inherit;
       font-size: 12px;
     }
+
     .filter-row input:focus {
       outline: 1px solid var(--accent);
     }
+
     .empty-state {
       padding: 60px 0;
       text-align: center;
       color: var(--muted);
       font-size: 14px;
     }
+
     #row-count {
       font-size: 12px;
       color: var(--muted);
       margin-top: 2px;
     }
+
     #controls {
       display: none;
       flex-direction: column;
       gap: 12px;
     }
+
     #sql-input {
       width: 100%;
       min-height: 160px;
@@ -219,49 +494,213 @@
       line-height: 1.5;
       resize: vertical;
       box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+      transition: all 0.2s ease;
     }
+
+    body.cyberpunk #sql-input {
+      border: 2px solid var(--neon-pink);
+      box-shadow: 0 0 15px rgba(255, 0, 255, 0.3);
+      color: var(--neon-cyan);
+    }
+
     .sql-actions {
       display: flex;
       gap: 8px;
       align-items: center;
       flex-wrap: wrap;
     }
+
     button {
       border-radius: 8px;
       border: 1px solid transparent;
       font-size: 13px;
       padding: 8px 14px;
       cursor: pointer;
+      transition: all 0.2s ease;
     }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+
     #run-query {
       background-color: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
       border-color: var(--vscode-button-border, transparent);
     }
+
+    body.cyberpunk #run-query {
+      background: linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
+      box-shadow: 0 0 20px var(--neon-pink);
+      border: none;
+    }
+
     #run-query:disabled {
       opacity: 0.6;
       cursor: default;
     }
+
     #copy-sql {
       background: transparent;
       color: inherit;
       border: 1px solid var(--panel-border);
     }
+
     .sql-hints {
       font-size: 12px;
       color: var(--muted);
     }
+
     .sql-grid {
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
+
+    /* QUERY HISTORY TIMELINE */
+    #history-timeline {
+      position: fixed;
+      left: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 60px;
+      max-height: 80vh;
+      overflow-y: auto;
+      z-index: 900;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    #history-timeline.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .history-item {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(100, 100, 255, 0.3), rgba(255, 100, 255, 0.3));
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: white;
+      transition: all 0.2s ease;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+    }
+
+    .history-item:hover {
+      transform: scale(1.2);
+      box-shadow: 0 5px 20px rgba(255, 0, 255, 0.5);
+    }
+
+    /* GOD MODE INDICATOR */
+    #god-mode-indicator {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+      background-size: 200% 200%;
+      padding: 10px 30px;
+      border-radius: 20px;
+      font-weight: bold;
+      font-size: 18px;
+      color: white;
+      text-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+      z-index: 10002;
+      animation: rainbowShift 2s linear infinite;
+      display: none;
+      box-shadow: 0 0 40px rgba(255, 255, 255, 0.5);
+    }
+
+    @keyframes rainbowShift {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+
+    #god-mode-indicator.active {
+      display: block;
+    }
+
+    /* VISUALIZE BUTTON */
+    #visualize-3d {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    #visualize-3d:hover {
+      box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+    }
+
+    #close-viz {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10001;
+      background: rgba(255, 0, 0, 0.8);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+      display: none;
+    }
+
+    #close-viz.active {
+      display: block;
+    }
+
+    /* SOUND TOGGLE */
+    #sound-toggle {
+      background: rgba(255, 215, 0, 0.2);
+      border: 2px solid gold;
+      color: gold;
+    }
+
+    #sound-toggle.active {
+      background: gold;
+      color: black;
+    }
   </style>
 </head>
 <body>
+  <!-- REVOLUTIONARY CANVASES -->
+  <canvas id="matrix-canvas"></canvas>
+  <canvas id="particle-canvas"></canvas>
+  <canvas id="viz-canvas"></canvas>
+  <button id="close-viz">✕ Close Visualization</button>
+
+  <!-- AI ASSISTANT -->
+  <div id="ai-assistant" title="Click for SQL suggestions!">🤖</div>
+
+  <!-- GOD MODE INDICATOR -->
+  <div id="god-mode-indicator">⚡ GOD MODE ACTIVATED ⚡</div>
+
+  <!-- QUERY HISTORY TIMELINE -->
+  <div id="history-timeline"></div>
+
   <div class="app-shell">
     <div id="status-wrapper">
       <div id="status">Initializing…</div>
+      <div class="mode-controls">
+        <button class="mode-btn" id="cyberpunk-toggle">🌃 Cyberpunk</button>
+        <button class="mode-btn" id="holographic-toggle">✨ Holographic</button>
+        <button class="mode-btn" id="sound-toggle">🔊 Sound</button>
+        <button class="mode-btn" id="matrix-toggle">💚 Matrix</button>
+      </div>
     </div>
 
     <main>
@@ -283,6 +722,7 @@
           <h2>SQL Preview</h2>
           <div class="sql-actions">
             <button id="copy-sql">Copy SQL</button>
+            <button id="visualize-3d">📊 3D Viz</button>
             <button id="run-query">Run Query</button>
           </div>
         </div>
