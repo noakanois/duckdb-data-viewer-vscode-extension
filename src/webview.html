@@ -256,6 +256,37 @@
       flex-direction: column;
       gap: 8px;
     }
+    #schema-container {
+      flex: 1;
+      border-radius: 10px;
+      border: 1px solid var(--panel-border);
+      overflow: auto;
+      background: var(--vscode-editor-background);
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+      padding: 10px;
+    }
+    .schema-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    .schema-item:last-child {
+      border-bottom: none;
+    }
+    .schema-name {
+      font-weight: bold;
+    }
+    #chart-container {
+      position: relative;
+      height: 400px;
+      width: 100%;
+    }
+    #chart-config {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -265,10 +296,42 @@
     </div>
 
     <main>
-      <section class="panel" id="results-panel">
+      <section class="panel" id="schema-panel">
         <div class="panel-heading">
-          <div>
-            <h2>Data Preview</h2>
+          <h2>Schema</h2>
+        </div>
+        <div id="schema-container"></div>
+      </section>
+      <section class="panel" id="results-panel">
+        <vscode-panels>
+          <vscode-panel-tab id="tab-data">Data</vscode-panel-tab>
+          <vscode-panel-tab id="tab-chart">Chart</vscode-panel-tab>
+          <vscode-panel-view id="view-data">
+            <div class="panel-heading">
+              <div>
+                <h2>Data Preview</h2>
+              </div>
+              <input type="search" id="global-search" placeholder="Search across all columns" />
+            </div>
+            <div id="results-container">
+              <div class="empty-state">Load a file to see the first rows.</div>
+            </div>
+          </vscode-panel-view>
+          <vscode-panel-view id="view-chart">
+            <div id="chart-container">
+              <canvas id="chart-canvas"></canvas>
+            </div>
+            <div id="chart-config">
+              <vscode-dropdown id="chart-type-dropdown"">
+                <vscode-option value="bar">Bar</vscode-option>
+                <vscode-option value="line">Line</vscode-option>
+                <vscode-option value="pie">Pie</vscode-option>
+              </vscode-dropdown>
+              <vscode-dropdown id="x-axis-dropdown"></vscode-dropdown>
+              <vscode-dropdown id="y-axis-dropdown"></vscode-dropdown>
+            </div>
+          </vscode-panel-view>
+        </vscode-panels>
             <div id="row-count">Awaiting data…</div>
           </div>
           <input type="search" id="global-search" placeholder="Search across all columns" />
@@ -282,6 +345,7 @@
         <div class="panel-heading">
           <h2>SQL Preview</h2>
           <div class="sql-actions">
+            <vscode-checkbox id="live-query-checkbox" checked>Live Query</vscode-checkbox>
             <button id="copy-sql">Copy SQL</button>
             <button id="run-query">Run Query</button>
           </div>
