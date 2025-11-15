@@ -35,6 +35,27 @@
       color: var(--vscode-editor-foreground);
       height: 100vh;
       display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+    body.hypercolor {
+      background: radial-gradient(circle at top left, rgba(255, 0, 128, 0.35), transparent 45%),
+                  radial-gradient(circle at bottom right, rgba(0, 182, 255, 0.35), transparent 40%),
+                  var(--vscode-editor-background);
+      animation: hypercolorPulse 16s linear infinite;
+    }
+    body.hypercolor .panel {
+      border-color: rgba(255, 255, 255, 0.18);
+      background: rgba(16, 18, 28, 0.72);
+      backdrop-filter: blur(16px);
+    }
+    body.hypercolor #run-query {
+      box-shadow: 0 0 12px rgba(255, 0, 128, 0.5);
+    }
+    @keyframes hypercolorPulse {
+      0% { filter: hue-rotate(0deg); }
+      50% { filter: hue-rotate(50deg) saturate(115%); }
+      100% { filter: hue-rotate(0deg); }
     }
     .app-shell {
       display: flex;
@@ -201,6 +222,23 @@
       color: var(--muted);
       margin-top: 2px;
     }
+    #row-count strong {
+      color: var(--vscode-editor-foreground);
+    }
+    .row-count-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(0, 182, 255, 0.18);
+      color: var(--vscode-editor-foreground);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
     #controls {
       display: none;
       flex-direction: column;
@@ -256,6 +294,148 @@
       flex-direction: column;
       gap: 8px;
     }
+    .reality-lab {
+      margin-top: 12px;
+      border: 1px dashed rgba(255, 0, 128, 0.4);
+      border-radius: 16px;
+      padding: 16px 18px;
+      background: rgba(255, 0, 128, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+    .reality-lab::after {
+      content: '';
+      position: absolute;
+      inset: -80px;
+      background: conic-gradient(from 120deg, rgba(255, 0, 128, 0.12), transparent 45%, rgba(0, 182, 255, 0.14));
+      opacity: 0.6;
+      animation: labSpin 18s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes labSpin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .reality-lab > * {
+      position: relative;
+      z-index: 1;
+    }
+    .reality-lab-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .reality-lab-header h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+    }
+    .reality-lab-copy {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .range-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: rgba(255, 0, 128, 0.8);
+    }
+    .range-label span {
+      display: inline-block;
+      margin-left: 6px;
+      font-weight: 600;
+      color: var(--vscode-editor-foreground);
+    }
+    input[type="range"]#temporal-slider {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(255, 0, 128, 0.9), rgba(0, 182, 255, 0.9));
+      outline: none;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(255, 0, 128, 0.2);
+    }
+    input[type="range"]#temporal-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid rgba(255, 0, 128, 0.8);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    input[type="range"]#temporal-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid rgba(255, 0, 128, 0.8);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .lab-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .lab-actions button {
+      background: rgba(0, 182, 255, 0.2);
+      color: var(--vscode-editor-foreground);
+      border: 1px solid rgba(0, 182, 255, 0.5);
+      backdrop-filter: blur(4px);
+    }
+    .lab-footnote {
+      margin: 0;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.7);
+      font-style: italic;
+    }
+    .accent-button {
+      background: rgba(255, 0, 128, 0.3);
+      color: var(--vscode-editor-foreground);
+      border: 1px solid rgba(255, 0, 128, 0.6);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    #confetti-container {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      z-index: 9999;
+      display: none;
+    }
+    #confetti-container.active {
+      display: block;
+    }
+    .confetti-piece {
+      position: absolute;
+      width: 12px;
+      height: 18px;
+      border-radius: 4px;
+      opacity: 0;
+      animation: confettiFall 1.2s ease-out forwards;
+    }
+    @keyframes confettiFall {
+      0% { transform: translate3d(0, -120px, 0) rotate(0deg); opacity: 0; }
+      30% { opacity: 1; }
+      100% { transform: translate3d(var(--drift, 0px), 260px, 0) rotate(200deg); opacity: 0; }
+    }
+    .quantum-flash {
+      animation: quantumFlash 0.7s ease-in-out;
+    }
+    @keyframes quantumFlash {
+      0% { box-shadow: 0 0 0 rgba(0, 182, 255, 0.0); }
+      40% { box-shadow: 0 0 32px rgba(0, 182, 255, 0.45); }
+      100% { box-shadow: 0 0 0 rgba(0, 182, 255, 0.0); }
+    }
   </style>
 </head>
 <body>
@@ -290,10 +470,26 @@
           <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
           <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
         </div>
+        <div class="reality-lab" aria-live="polite">
+          <div class="reality-lab-header">
+            <h3>Reality Distortion Lab</h3>
+            <button type="button" id="toggle-hypercolor" class="accent-button">Engage Hypercolor</button>
+          </div>
+          <p class="reality-lab-copy">Warp the fabric of your preview, remix the vibes, and bend the LIMIT without rewriting your masterpiece query.</p>
+          <label class="range-label" for="temporal-slider">
+            Temporal Preview <span id="temporal-limit-label"></span>
+          </label>
+          <input type="range" id="temporal-slider" min="0" max="1000" step="10" value="200" />
+          <div class="lab-actions">
+            <button type="button" id="quantum-shuffle">Quantum Shuffle Rows</button>
+            <p class="lab-footnote">Need a fresh perspective? The shuffle reorders the preview rows for serendipitous discoveries—no SQL harmed.</p>
+          </div>
+        </div>
       </section>
     </main>
   </div>
 
+  <div id="confetti-container" aria-hidden="true"></div>
   <script nonce="{{nonce}}" src="{{webview_script_uri}}"></script>
 </body>
 </html>

@@ -19,6 +19,11 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const hypercolorButton = document.getElementById('toggle-hypercolor') as HTMLButtonElement;
+const temporalSlider = document.getElementById('temporal-slider') as HTMLInputElement;
+const temporalLimitLabel = document.getElementById('temporal-limit-label');
+const quantumShuffleButton = document.getElementById('quantum-shuffle') as HTMLButtonElement;
+const confettiContainer = document.getElementById('confetti-container');
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -42,6 +47,8 @@ let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
 const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
+const DEFAULT_TEMPORAL_LIMIT = 200;
+let temporalLimit: number | null = DEFAULT_TEMPORAL_LIMIT;
 
 // --- Event Listeners (Moved to top) ---
 
@@ -76,6 +83,42 @@ if (globalSearchInput) {
   globalSearchInput.addEventListener('input', () => {
     globalFilter = globalSearchInput.value;
     applyTableState();
+  });
+}
+
+if (hypercolorButton) {
+  hypercolorButton.addEventListener('click', () => {
+    const body = document.body;
+    const hypercolorEngaged = body.classList.toggle('hypercolor');
+    hypercolorButton.textContent = hypercolorEngaged ? 'Disengage Hypercolor' : 'Engage Hypercolor';
+    updateStatus(
+      hypercolorEngaged
+        ? 'Hypercolor engaged! Bask in the neon nebula while you explore your data multiverse.'
+        : 'Hypercolor disengaged. Returning to baseline reality.'
+    );
+  });
+}
+
+if (temporalSlider) {
+  const initialValue = parseInt(temporalSlider.value, 10);
+  temporalLimit = Number.isFinite(initialValue) && initialValue > 0 ? initialValue : null;
+  updateTemporalLimitLabel();
+  temporalSlider.addEventListener('input', () => {
+    const sliderValue = parseInt(temporalSlider.value, 10);
+    temporalLimit = sliderValue <= 0 ? null : sliderValue;
+    updateTemporalLimitLabel();
+    updateStatus(
+      temporalLimit
+        ? `Temporal preview set to ${temporalLimit.toLocaleString()} rows. Brace for condensed insights!`
+        : 'Temporal limit removed. Full-stream reality unlocked!'
+    );
+    applyTableState();
+  });
+}
+
+if (quantumShuffleButton) {
+  quantumShuffleButton.addEventListener('click', () => {
+    quantumShuffle();
   });
 }
 
@@ -192,8 +235,12 @@ async function handleFileLoad(fileName: string, fileData: any) {
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
 
-  if (controls) controls.style.display = 'flex';
-  if (resultsContainer) resultsContainer.style.display = 'block';
+  if (controls) {
+    controls.style.display = 'flex';
+  }
+  if (resultsContainer) {
+    resultsContainer.style.display = 'block';
+  }
 
   await runQuery(defaultQuery);
 }
@@ -231,15 +278,17 @@ async function runQuery(sql: string) {
   runButton.disabled = true;
 
   try {
-    const result = await connection.query(sql);
+    const executedSql = applyTemporalLimitToQuery(sql);
+    const result = await connection.query(executedSql);
     renderResults(result);
-    
+
     // --- CHANGE ---
     // Hide the status bar on success
     if (statusWrapper) {
       statusWrapper.style.display = 'none';
     }
     // ---
+    launchConfetti();
 
   } catch (e) {
     reportError(e); // reportError will show the status bar
@@ -266,7 +315,9 @@ function renderResults(table: Table | null) {
 
   for (let i = 0; i < table.numRows; i++) {
     const row = table.get(i);
-    if (!row) continue;
+    if (!row) {
+      continue;
+    }
 
     const raw: any[] = [];
     const display: string[] = [];
@@ -366,7 +417,9 @@ function applyTableState() {
       }
     }
     return normalizedFilters.every((filter, idx) => {
-      if (!filter) return true;
+      if (!filter) {
+        return true;
+      }
       return (row.display[idx] ?? '').toLowerCase().includes(filter);
     });
   });
@@ -456,11 +509,21 @@ function updateRowCount(visible: number, total: number) {
   if (!rowCountLabel) {
     return;
   }
-  rowCountLabel.textContent = '';
+  if (!total) {
+    rowCountLabel.textContent = 'No rows available yet—load a dataset to ignite the preview.';
+    return;
+  }
+
+  const limitText = temporalLimit
+    ? `Limit ${temporalLimit.toLocaleString()} enforced`
+    : 'Limitless mode';
+  rowCountLabel.innerHTML = `🚀 Displaying <strong>${visible.toLocaleString()}</strong> / <strong>${total.toLocaleString()}</strong> rows <span class="row-count-pill">${limitText}</span>`;
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
-  if (a === b) return 0;
+  if (a === b) {
+    return 0;
+  }
 
   const aIsNumber = typeof a === 'number' && Number.isFinite(a);
   const bIsNumber = typeof b === 'number' && Number.isFinite(b);
@@ -540,6 +603,72 @@ function reportError(e: any) {
     status.classList.add('error'); // Add a red error style
   }
   console.error(`[Error] ${message}`, e);
+}
+
+function updateTemporalLimitLabel() {
+  if (!temporalLimitLabel) {
+    return;
+  }
+  temporalLimitLabel.textContent = temporalLimit
+    ? `${temporalLimit.toLocaleString()} rows`
+    : '∞ (limitless)';
+}
+
+function applyTemporalLimitToQuery(sql: string): string {
+  if (!temporalLimit || temporalLimit <= 0) {
+    return sql;
+  }
+
+  const limitRegex = /(limit\s+)(\d+)/i;
+  if (limitRegex.test(sql)) {
+    return sql.replace(limitRegex, `$1${temporalLimit}`);
+  }
+
+  const withoutTrailing = sql.replace(/;*\s*$/u, '');
+  return `${withoutTrailing}\nLIMIT ${temporalLimit};`;
+}
+
+function quantumShuffle() {
+  if (!currentTableData) {
+    updateStatus('No data loaded yet—summon a file before quantum shuffling.');
+    return;
+  }
+  const rows = [...currentTableData.rows];
+  for (let i = rows.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [rows[i], rows[j]] = [rows[j], rows[i]];
+  }
+  currentTableData.rows = rows;
+  sortState = { columnIndex: -1, direction: null };
+  applyTableState();
+  if (resultsContainer) {
+    resultsContainer.classList.add('quantum-flash');
+    window.setTimeout(() => resultsContainer.classList.remove('quantum-flash'), 800);
+  }
+  updateStatus('Quantum shuffle complete! Rows re-ordered across adjacent timelines.');
+}
+
+function launchConfetti() {
+  if (!confettiContainer) {
+    return;
+  }
+  confettiContainer.innerHTML = '';
+  const colors = ['#ff0080', '#00b6ff', '#ffe600', '#ffffff'];
+  const pieces = 36;
+  for (let i = 0; i < pieces; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.background = colors[i % colors.length];
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.setProperty('--drift', `${(Math.random() - 0.5) * 220}px`);
+    piece.style.animationDelay = `${Math.random() * 0.25}s`;
+    confettiContainer.appendChild(piece);
+  }
+  confettiContainer.classList.add('active');
+  window.setTimeout(() => {
+    confettiContainer.classList.remove('active');
+    confettiContainer.innerHTML = '';
+  }, 1400);
 }
 
 // Send the 'ready' signal to the extension to start the handshake
