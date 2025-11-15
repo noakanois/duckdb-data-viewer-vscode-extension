@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="
+  <meta http-equiv="Content-Security-Policy" content="
         default-src 'none';
         style-src {{csp_source}} 'unsafe-inline';
         script-src 'nonce-{{nonce}}' 'unsafe-eval';
         worker-src blob:;
-        connect-src 
-            {{csp_source}} 
-            https://file+.vscode-resource.vscode-cdn.net 
-            blob: 
+        connect-src
+            {{csp_source}}
+            https://file+.vscode-resource.vscode-cdn.net
+            blob:
             https:;
     ">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,6 +23,9 @@
       --muted: var(--vscode-descriptionForeground);
       --accent: var(--vscode-button-background);
       --column-header-height: 44px;
+      --mood-hue: 200;
+      --mood-saturation: 75%;
+      --mood-lightness: 62%;
     }
     * {
       box-sizing: border-box;
@@ -35,12 +38,72 @@
       color: var(--vscode-editor-foreground);
       height: 100vh;
       display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+    body::before {
+      content: '';
+      position: absolute;
+      inset: -40% -20%;
+      background: radial-gradient(circle at 20% 20%, rgba(255, 0, 128, 0.35), transparent 45%),
+                  radial-gradient(circle at 80% 30%, rgba(0, 255, 255, 0.25), transparent 40%),
+                  radial-gradient(circle at 50% 80%, rgba(255, 255, 0, 0.2), transparent 55%);
+      filter: blur(60px) saturate(180%);
+      opacity: 0.55;
+      animation: drift 40s linear infinite;
+      pointer-events: none;
+      transform: translateZ(0);
     }
     .app-shell {
       display: flex;
       flex-direction: column;
       gap: 16px;
       width: 100%;
+      position: relative;
+      z-index: 2;
+    }
+    .cosmic-header {
+      background: linear-gradient(120deg, rgba(255, 0, 128, 0.12), rgba(0, 179, 255, 0.08));
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(18px) saturate(130%);
+    }
+    .cosmic-header h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .cosmic-header p {
+      margin: 8px 0 0 0;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+    .hyper-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .pulse-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: radial-gradient(circle at center, rgba(0, 255, 204, 0.95), rgba(0, 0, 0, 0.2));
+      box-shadow: 0 0 14px rgba(0, 255, 204, 0.9);
+      animation: heartbeat 2.8s ease-in-out infinite;
+    }
+    .pulse-label {
+      white-space: nowrap;
     }
     #status-wrapper {
       background: var(--panel-bg);
@@ -51,6 +114,7 @@
       align-items: center;
       gap: 12px;
       min-height: 56px;
+      backdrop-filter: blur(12px);
     }
     #status {
       font-weight: 500;
@@ -75,6 +139,20 @@
       flex-direction: column;
       gap: 12px;
       min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .panel::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(160deg, rgba(255, 255, 255, 0.04), transparent 50%);
+      opacity: 0;
+      transition: opacity 0.6s ease;
+    }
+    .panel:hover::after {
+      opacity: 1;
     }
     .panel-heading {
       display: flex;
@@ -104,6 +182,152 @@
     }
     #results-panel {
       flex: 1;
+    }
+    #dreamscape-panel {
+      border-image: linear-gradient(120deg, rgba(0, 255, 204, 0.4), rgba(255, 0, 171, 0.45)) 1;
+    }
+    #dreamscape-panel::before {
+      content: '';
+      position: absolute;
+      inset: -20% -10%;
+      background: radial-gradient(circle at top left, rgba(0, 255, 171, 0.2), transparent 55%),
+                  radial-gradient(circle at bottom right, rgba(255, 0, 171, 0.25), transparent 50%);
+      filter: blur(40px);
+      opacity: 0.7;
+      pointer-events: none;
+    }
+    #dreamscape-panel .panel-heading span {
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .dreamscape-content {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      align-items: start;
+    }
+    .mood-ring {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      text-align: center;
+    }
+    .mood-ring-core {
+      position: relative;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: conic-gradient(
+        from 180deg,
+        hsla(var(--mood-hue), var(--mood-saturation), calc(var(--mood-lightness) + 10%), 0.95) 0%,
+        hsla(calc(var(--mood-hue) + 60), calc(var(--mood-saturation) * 0.9), calc(var(--mood-lightness) + 5%), 0.7) 40%,
+        hsla(calc(var(--mood-hue) + 120), var(--mood-saturation), calc(var(--mood-lightness) - 5%), 0.8) 75%,
+        hsla(var(--mood-hue), var(--mood-saturation), calc(var(--mood-lightness) + 15%), 0.95) 100%
+      );
+      box-shadow: 0 0 28px rgba(255, 255, 255, 0.3);
+      overflow: hidden;
+      animation: swirl 18s linear infinite;
+    }
+    .mood-ring-core::after {
+      content: '';
+      position: absolute;
+      inset: 18%;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.8), rgba(0, 0, 0, 0.1));
+      filter: blur(4px);
+      opacity: 0.8;
+    }
+    .mood-ring p {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .nebula {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 120px;
+      position: relative;
+    }
+    .nebula::before {
+      content: 'Column Nebula';
+      position: absolute;
+      top: -12px;
+      left: 4px;
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+    }
+    .nebula-chip {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 6px 14px;
+      background: rgba(255, 255, 255, 0.06);
+      color: inherit;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+      transition: transform 0.4s ease, box-shadow 0.4s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .nebula-chip::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(120deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .nebula-chip:hover {
+      transform: translateY(-4px) scale(1.04) rotate(-1deg);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+    }
+    .nebula-chip:hover::after {
+      opacity: 1;
+    }
+    .sql-muses {
+      background: rgba(0, 0, 0, 0.16);
+      border-radius: 12px;
+      padding: 16px 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2);
+    }
+    .sql-muses h3 {
+      margin: 0 0 10px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+    #sql-spellbook {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #sql-spellbook li {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: 'Fira Code', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      cursor: pointer;
+      transition: transform 0.25s ease, border-color 0.25s ease;
+      line-height: 1.5;
+    }
+    #sql-spellbook li:hover {
+      transform: translateX(6px);
+      border-color: rgba(0, 255, 171, 0.55);
     }
     #results-container {
       display: none;
@@ -199,7 +423,11 @@
     #row-count {
       font-size: 12px;
       color: var(--muted);
-      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.24em;
+    }
+    .row-count-intensity {
+      color: rgba(0, 255, 171, 0.7);
     }
     #controls {
       display: none;
@@ -237,10 +465,17 @@
       background-color: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
       border-color: var(--vscode-button-border, transparent);
+      box-shadow: 0 8px 20px rgba(0, 255, 171, 0.25);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    #run-query:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 26px rgba(0, 255, 171, 0.35);
     }
     #run-query:disabled {
       opacity: 0.6;
       cursor: default;
+      box-shadow: none;
     }
     #copy-sql {
       background: transparent;
@@ -256,15 +491,62 @@
       flex-direction: column;
       gap: 8px;
     }
+    @keyframes drift {
+      0% { transform: rotate(0deg) scale(1); }
+      50% { transform: rotate(12deg) scale(1.05); }
+      100% { transform: rotate(360deg) scale(1); }
+    }
+    @keyframes heartbeat {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 12px rgba(0, 255, 204, 0.7); }
+      30% { transform: scale(1.2); box-shadow: 0 0 20px rgba(255, 0, 171, 0.9); }
+      60% { transform: scale(0.9); box-shadow: 0 0 8px rgba(0, 179, 255, 0.6); }
+    }
+    @keyframes swirl {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
   <div class="app-shell">
+    <header class="cosmic-header">
+      <div>
+        <h1>DuckDB Data Observatory</h1>
+        <p id="cosmic-tagline">Awaiting cosmic dataset alignment…</p>
+      </div>
+      <div class="hyper-controls">
+        <span class="pulse-indicator" id="hyper-beacon"></span>
+        <span class="pulse-label" id="hyper-label">Dreamstate idle</span>
+      </div>
+    </header>
     <div id="status-wrapper">
       <div id="status">Initializing…</div>
     </div>
 
     <main>
+      <section class="panel" id="dreamscape-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Data Dreamscape</h2>
+            <p>Feel the quantum personality of your dataset.</p>
+          </div>
+          <span id="dreamscape-status">Awaiting starlight…</span>
+        </div>
+        <div class="dreamscape-content">
+          <div class="mood-ring">
+            <div class="mood-ring-core" id="mood-ring-core"></div>
+            <p id="mood-ring-label">Moodless void</p>
+          </div>
+          <div class="nebula" id="column-nebula"></div>
+          <div class="sql-muses">
+            <h3>SQL Spellbook</h3>
+            <ul id="sql-spellbook">
+              <li>Summon rows to populate your spellbook.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
       <section class="panel" id="results-panel">
         <div class="panel-heading">
           <div>
@@ -280,7 +562,7 @@
 
       <section class="panel" id="controls">
         <div class="panel-heading">
-          <h2>SQL Preview</h2>
+          <h2>SQL Playground</h2>
           <div class="sql-actions">
             <button id="copy-sql">Copy SQL</button>
             <button id="run-query">Run Query</button>
