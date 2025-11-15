@@ -30,27 +30,85 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0;
-      padding: 20px;
-      background-color: var(--vscode-editor-background);
+      padding: 24px;
+      background: radial-gradient(circle at 20% 20%, rgba(88, 143, 255, 0.25), transparent 55%),
+        radial-gradient(circle at 80% 10%, rgba(255, 143, 240, 0.25), transparent 50%),
+        var(--vscode-editor-background);
       color: var(--vscode-editor-foreground);
+      min-height: 100vh;
       height: 100vh;
       display: flex;
+      justify-content: center;
+      overflow: hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(120deg, rgba(255, 255, 255, 0.04), transparent 60%);
     }
     .app-shell {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 20px;
       width: 100%;
+      max-width: 1240px;
+      position: relative;
+      z-index: 1;
+    }
+    .app-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .hero-copy h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    .hero-copy p {
+      margin: 8px 0 0;
+      font-size: 14px;
+      color: var(--muted);
+      max-width: 600px;
+      line-height: 1.6;
+    }
+    .hero-badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(8px);
     }
     #status-wrapper {
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 10px;
-      padding: 16px 20px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 18px 24px;
       display: flex;
       align-items: center;
-      gap: 12px;
-      min-height: 56px;
+      gap: 14px;
+      min-height: 60px;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.24);
+    }
+    .status-icon {
+      font-size: 18px;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
     }
     #status {
       font-weight: 500;
@@ -63,18 +121,36 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 20px;
+      min-height: 0;
+    }
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 2.2fr) minmax(280px, 1fr);
+      gap: 20px;
+      min-height: 0;
+    }
+    .side-column {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
       min-height: 0;
     }
     .panel {
       background: var(--panel-bg);
       border: 1px solid var(--panel-border);
-      border-radius: 12px;
-      padding: 16px 20px;
+      border-radius: 18px;
+      padding: 18px 22px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
       min-height: 0;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+    }
+    .panel.glowing {
+      border: 1px solid rgba(88, 143, 255, 0.35);
+      box-shadow: 0 12px 40px rgba(88, 143, 255, 0.18);
     }
     .panel-heading {
       display: flex;
@@ -83,36 +159,63 @@
       gap: 16px;
       flex-wrap: wrap;
     }
+    .panel-heading.stacked {
+      align-items: flex-start;
+    }
     .panel-heading h2 {
       margin: 0;
       font-size: 16px;
       font-weight: 600;
+      letter-spacing: 0.02em;
     }
     .panel-heading p {
-      margin: 2px 0 0 0;
+      margin: 4px 0 0;
       font-size: 12px;
       color: var(--muted);
+    }
+    .panel-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .panel-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
     }
     #global-search {
       flex: 1;
       min-width: 220px;
-      border-radius: 8px;
-      border: 1px solid var(--panel-border);
-      background: var(--vscode-editor-background);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(0, 0, 0, 0.18);
       color: inherit;
-      padding: 8px 12px;
+      padding: 10px 14px 10px 40px;
+      font-size: 13px;
+      position: relative;
+      backdrop-filter: blur(12px);
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="%23ccc" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>');
+      background-repeat: no-repeat;
+      background-position: 12px center;
+      background-size: 16px;
+    }
+    #global-search:focus {
+      outline: 2px solid rgba(88, 143, 255, 0.6);
     }
     #results-panel {
       flex: 1;
+      min-height: 0;
     }
     #results-container {
       display: none;
       flex: 1;
-      border-radius: 10px;
-      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
       overflow: auto;
       background: var(--vscode-editor-background);
-      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+      background: color-mix(in srgb, var(--vscode-editor-background) 92%, transparent);
+      box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.06);
     }
     table {
       width: 100%;
@@ -122,9 +225,10 @@
     }
     thead th {
       background: var(--panel-bg);
+      background: color-mix(in srgb, var(--panel-bg) 90%, rgba(255, 255, 255, 0.02));
       text-align: left;
       font-weight: 600;
-      border-bottom: 1px solid var(--panel-border);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       padding: 0;
     }
     thead .column-row th {
@@ -137,16 +241,17 @@
       top: var(--column-header-height);
       z-index: 1;
       background: var(--panel-bg);
+      background: color-mix(in srgb, var(--panel-bg) 90%, rgba(255, 255, 255, 0.02));
     }
     th, td {
       padding: 10px 12px;
-      border-bottom: 1px solid var(--panel-border);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     }
     tbody tr:nth-child(even) {
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(255, 255, 255, 0.03);
     }
     tbody tr:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: rgba(88, 143, 255, 0.08);
     }
     .empty-row {
       text-align: center;
@@ -181,14 +286,14 @@
     .filter-row input {
       width: 100%;
       border: none;
-      border-top: 1px solid var(--panel-border);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
       padding: 8px 10px;
       background: rgba(255, 255, 255, 0.02);
       color: inherit;
       font-size: 12px;
     }
     .filter-row input:focus {
-      outline: 1px solid var(--accent);
+      outline: 1px solid rgba(88, 143, 255, 0.6);
     }
     .empty-state {
       padding: 60px 0;
@@ -196,10 +301,144 @@
       color: var(--muted);
       font-size: 14px;
     }
+    .empty-state.secondary {
+      padding: 24px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+    }
     #row-count {
       font-size: 12px;
       color: var(--muted);
       margin-top: 2px;
+    }
+    .insight-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .insight-card {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 14px;
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 120px;
+    }
+    .insight-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .insight-card-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .insight-pill {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(88, 143, 255, 0.18);
+      border: 1px solid rgba(88, 143, 255, 0.32);
+    }
+    .insight-card-body {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .insight-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .insight-stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .insight-stat-value {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .insight-card-footer {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .schema-section h3 {
+      margin: 8px 0 4px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .schema-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: auto;
+      max-height: 180px;
+    }
+    .schema-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12px;
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+      padding-bottom: 6px;
+    }
+    .schema-item:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    .schema-name {
+      font-weight: 600;
+    }
+    .schema-type {
+      color: var(--muted);
+      text-align: right;
+    }
+    .schema-empty {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+    }
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 260px;
+      overflow: auto;
+    }
+    .history-button {
+      text-align: left;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.04);
+      color: inherit;
+      font-size: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: transform 0.12s ease, background 0.12s ease;
+    }
+    .history-button:hover {
+      transform: translateY(-2px);
+      background: rgba(88, 143, 255, 0.18);
+    }
+    .history-button:active {
+      transform: translateY(0);
     }
     #controls {
       display: none;
@@ -208,44 +447,49 @@
     }
     #sql-input {
       width: 100%;
-      min-height: 160px;
-      padding: 14px 16px;
-      border-radius: 10px;
-      border: 1px solid var(--panel-border);
-      background-color: var(--vscode-editor-background);
+      min-height: 170px;
+      padding: 16px 18px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background-color: rgba(0, 0, 0, 0.22);
       color: inherit;
       font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.6;
       resize: vertical;
-      box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+    #sql-input:focus {
+      outline: 2px solid rgba(88, 143, 255, 0.5);
     }
     .sql-actions {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       align-items: center;
       flex-wrap: wrap;
     }
     button {
-      border-radius: 8px;
+      border-radius: 12px;
       border: 1px solid transparent;
       font-size: 13px;
-      padding: 8px 14px;
+      padding: 9px 16px;
       cursor: pointer;
+      background: rgba(255, 255, 255, 0.05);
+      color: inherit;
     }
-    #run-query {
-      background-color: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-      border-color: var(--vscode-button-border, transparent);
-    }
-    #run-query:disabled {
+    button:disabled {
       opacity: 0.6;
       cursor: default;
     }
-    #copy-sql {
-      background: transparent;
-      color: inherit;
-      border: 1px solid var(--panel-border);
+    .primary-button {
+      background: var(--accent);
+      color: var(--vscode-button-foreground);
+      border-color: var(--vscode-button-border, transparent);
+      box-shadow: 0 12px 30px rgba(88, 143, 255, 0.35);
+    }
+    .ghost-button {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.12);
     }
     .sql-hints {
       font-size: 12px;
@@ -254,36 +498,110 @@
     .sql-grid {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
+    }
+    @media (max-width: 1024px) {
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+      .side-column {
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+      .side-column .panel {
+        flex: 1 1 300px;
+      }
+    }
+    @media (max-width: 720px) {
+      body {
+        padding: 16px;
+      }
+      .app-header {
+        flex-direction: column;
+        gap: 12px;
+      }
+      .panel-actions {
+        width: 100%;
+      }
+      #global-search {
+        width: 100%;
+      }
+      .hero-copy h1 {
+        font-size: 24px;
+      }
     }
   </style>
 </head>
 <body>
   <div class="app-shell">
+    <header class="app-header">
+      <div class="hero-copy">
+        <h1>DuckDB Data Playground</h1>
+        <p>Query huge files instantly, remix columns on the fly, and surface insights without leaving VS Code.</p>
+      </div>
+      <div class="hero-badges">
+        <span class="hero-badge">⚡ In-memory analytics</span>
+        <span class="hero-badge">🧠 Instant insights</span>
+        <span class="hero-badge">📝 Smart history</span>
+      </div>
+    </header>
+
     <div id="status-wrapper">
+      <div class="status-icon">🛰️</div>
       <div id="status">Initializing…</div>
     </div>
 
     <main>
-      <section class="panel" id="results-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Data Preview</h2>
-            <div id="row-count">Awaiting data…</div>
+      <div class="content-grid">
+        <section class="panel" id="results-panel">
+          <div class="panel-heading stacked">
+            <div class="panel-title-group">
+              <h2>Data Preview</h2>
+              <div id="row-count">Awaiting data…</div>
+            </div>
+            <div class="panel-actions">
+              <input type="search" id="global-search" placeholder="Search across all columns" />
+              <button id="download-results" class="ghost-button" disabled>⬇️ Download CSV</button>
+            </div>
           </div>
-          <input type="search" id="global-search" placeholder="Search across all columns" />
-        </div>
-        <div id="results-container">
-          <div class="empty-state">Load a file to see the first rows.</div>
-        </div>
-      </section>
+          <div id="results-container">
+            <div class="empty-state">Load a file to see the first rows.</div>
+          </div>
+        </section>
 
-      <section class="panel" id="controls">
+        <div class="side-column">
+          <section class="panel" id="insights-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Instant Insights</h2>
+                <p>Spot trends, detect anomalies, and plan your next query.</p>
+              </div>
+            </div>
+            <div id="insight-cards" class="insight-grid"></div>
+            <div class="schema-section">
+              <h3>Schema overview</h3>
+              <ul id="schema-list" class="schema-list"></ul>
+            </div>
+          </section>
+
+          <section class="panel" id="history-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Query History</h2>
+                <p>Click a snippet to re-run and iterate faster.</p>
+              </div>
+            </div>
+            <div id="history-list" class="history-list"></div>
+          </section>
+        </div>
+      </div>
+
+      <section class="panel glowing" id="controls">
         <div class="panel-heading">
-          <h2>SQL Preview</h2>
+          <h2>SQL Playground</h2>
           <div class="sql-actions">
-            <button id="copy-sql">Copy SQL</button>
-            <button id="run-query">Run Query</button>
+            <button id="copy-sql" class="ghost-button">Copy SQL</button>
+            <button id="run-query" class="primary-button">Run Query</button>
           </div>
         </div>
         <div class="sql-grid">
