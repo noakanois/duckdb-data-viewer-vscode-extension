@@ -30,17 +30,46 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0;
-      padding: 20px;
+      padding: 0;
       background-color: var(--vscode-editor-background);
       color: var(--vscode-editor-foreground);
       height: 100vh;
       display: flex;
+      overflow: hidden;
     }
-    .app-shell {
+    #sidebar {
+      width: 220px;
+      min-width: 180px;
+      padding: 16px;
       display: flex;
       flex-direction: column;
       gap: 16px;
+      border-right: 1px solid var(--panel-border);
+      background-color: var(--vscode-sideBar-background);
+    }
+    #sidebar h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    #tables-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #add-data-button {
       width: 100%;
+    }
+    .app-shell {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px;
+      min-width: 0;
     }
     #status-wrapper {
       background: var(--panel-bg);
@@ -104,6 +133,58 @@
     }
     #results-panel {
       flex: 1;
+    }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    .tab-button {
+      padding: 8px 14px;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-radius: 6px 6px 0 0;
+      cursor: pointer;
+      background: none;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .tab-button.active {
+      background: var(--panel-bg);
+      border-color: var(--panel-border);
+      color: var(--vscode-editor-foreground);
+    }
+    .tab-content {
+      display: none;
+      flex: 1;
+      padding-top: 16px;
+    }
+    .tab-content.active {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #overview-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .column-profile {
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .column-profile h3 {
+      margin-top: 0;
+    }
+    .column-profile table {
+      width: 100%;
+      margin-bottom: 12px;
+    }
+    .column-profile canvas {
+      max-height: 200px;
     }
     #results-container {
       display: none;
@@ -259,6 +340,11 @@
   </style>
 </head>
 <body>
+  <div id="sidebar">
+    <h2>Tables</h2>
+    <ul id="tables-list"></ul>
+    <button id="add-data-button">Add Data Source</button>
+  </div>
   <div class="app-shell">
     <div id="status-wrapper">
       <div id="status">Initializing…</div>
@@ -266,15 +352,24 @@
 
     <main>
       <section class="panel" id="results-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Data Preview</h2>
-            <div id="row-count">Awaiting data…</div>
-          </div>
-          <input type="search" id="global-search" placeholder="Search across all columns" />
+        <div class="tabs">
+          <button class="tab-button active" data-tab="preview">Data Preview</button>
+          <button class="tab-button" data-tab="overview">Overview</button>
         </div>
-        <div id="results-container">
-          <div class="empty-state">Load a file to see the first rows.</div>
+        <div id="tab-preview" class="tab-content active">
+          <div class="panel-heading">
+            <div>
+              <h2>Data Preview</h2>
+              <div id="row-count">Awaiting data…</div>
+            </div>
+            <input type="search" id="global-search" placeholder="Search across all columns" />
+          </div>
+          <div id="results-container">
+            <div class="empty-state">Load a file to see the first rows.</div>
+          </div>
+        </div>
+        <div id="tab-overview" class="tab-content">
+          <div id="overview-container"></div>
         </div>
       </section>
 

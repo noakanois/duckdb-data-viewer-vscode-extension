@@ -19,6 +19,11 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const tablesList = document.getElementById('tables-list');
+const addDataButton = document.getElementById('add-data-button');
+const overviewContainer = document.getElementById('overview-container');
+const tabButtons = document.querySelectorAll('.tab-button');
+const tabContents = document.querySelectorAll('.tab-content');
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -35,7 +40,9 @@ interface TableData {
 let db: duckdb.AsyncDuckDB | null = null;
 let connection: duckdb.AsyncDuckDBConnection | null = null;
 let duckdbInitializationPromise: Promise<void> | null = null;
+let Chart: any;
 let currentTableData: TableData | null = null;
+const loadedTables: { relationIdentifier: string; columns: string[] }[] = [];
 let columnFilters: string[] = [];
 let globalFilter = '';
 let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex: -1, direction: null };
@@ -57,9 +64,32 @@ window.addEventListener('message', (event: any) => {
   }
 });
 
+if (addDataButton) {
+  addDataButton.addEventListener('click', () => {
+    vscode.postMessage({ command: 'add-data-source' });
+  });
+}
+
 // Listen for the "Run" button click
 runButton.addEventListener('click', () => {
   runQuery(sqlInput.value).catch(reportError);
+});
+
+tabButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const tab = button.getAttribute('data-tab');
+
+    tabButtons.forEach((btn) => btn.classList.remove('active'));
+    button.classList.add('active');
+
+    tabContents.forEach((content) => {
+      if (content.id === `tab-${tab}`) {
+        content.classList.add('active');
+      } else {
+        content.classList.remove('active');
+      }
+    });
+  });
 });
 
 // Allow Cmd/Ctrl + Enter to run the query
@@ -158,6 +188,11 @@ async function bootstrapDuckDB(bundles: duckdb.DuckDBBundles) {
     updateStatus('Connecting to DuckDB...');
     connection = await db.connect();
     
+    updateStatus('Loading Chart.js...');
+    const chartJs = await import('chart.js');
+    Chart = chartJs.Chart;
+    Chart.register(...chartJs.registerables);
+
     updateStatus('Installing extensions...');
     await connection.query("INSTALL parquet; LOAD parquet;");
     await connection.query("INSTALL sqlite; LOAD sqlite;");
@@ -188,14 +223,118 @@ async function handleFileLoad(fileName: string, fileData: any) {
     updateStatus,
   });
 
-  const defaultQuery = buildDefaultQuery(loadResult.columns, loadResult.relationIdentifier);
-  sqlInput.value = defaultQuery;
-  sqlInput.placeholder = `Example: ${defaultQuery}`;
+  loadedTables.push({
+    relationIdentifier: loadResult.relationIdentifier,
+    columns: loadResult.columns,
+  });
+  updateTablesList();
 
-  if (controls) controls.style.display = 'flex';
-  if (resultsContainer) resultsContainer.style.display = 'block';
+  // On the first table, generate a default query.
+  if (loadedTables.length === 1) {
+    const defaultQuery = buildDefaultQuery(loadResult.columns, loadResult.relationIdentifier);
+    sqlInput.value = defaultQuery;
+    sqlInput.placeholder = `Example: ${defaultQuery}`;
+    if (controls) {controls.style.display = 'flex';}
+    if (resultsContainer) {resultsContainer.style.display = 'block';}
+    await runQuery(defaultQuery);
+    await generateProfile(loadResult.relationIdentifier, loadResult.columns);
+  } else {
+    updateStatus(`Ready to query ${loadedTables.length} tables.`);
+  }
+}
 
-  await runQuery(defaultQuery);
+async function generateProfile(relationIdentifier: string, columns: string[]) {
+  if (!connection || !overviewContainer) {
+    return;
+  }
+
+  const profileClauses = columns
+    .map(
+      (col) => `
+    '${col}' AS column,
+    COUNT("${col}") AS count,
+    AVG(CASE WHEN IS_NUMERIC("${col}") THEN "${col}" ELSE NULL END) AS avg,
+    MIN(CASE WHEN IS_NUMERIC("${col}") THEN "${col}" ELSE NULL END) AS min,
+    MAX(CASE WHEN IS_NUMERIC("${col}") THEN "${col}" ELSE NULL END) AS max,
+    COUNT(DISTINCT "${col}") AS distinct_values,
+    SUM(CASE WHEN "${col}" IS NULL THEN 1 ELSE 0 END) AS null_count
+  `
+    )
+    .join(' UNION ALL SELECT ');
+
+  const query = `SELECT ${profileClauses} FROM ${relationIdentifier}`;
+  const profileData = await connection.query(query);
+
+  overviewContainer.innerHTML = ''; // Clear previous content
+
+  for (const row of profileData) {
+    const r = row.toJSON();
+    const isCategorical = r.distinct_values < 20; // Simple heuristic for categorization
+
+    const colDiv = document.createElement('div');
+    colDiv.className = 'column-profile';
+
+    let statsHtml = `
+      <h3>${r.column}</h3>
+      <table>
+        <tr><td>Count</td><td>${r.count}</td></tr>
+        <tr><td>Average</td><td>${r.avg?.toFixed(2) ?? 'N/A'}</td></tr>
+        <tr><td>Min</td><td>${r.min ?? 'N/A'}</td></tr>
+        <tr><td>Max</td><td>${r.max ?? 'N/A'}</td></tr>
+        <tr><td>Distinct</td><td>${r.distinct_values}</td></tr>
+        <tr><td>Nulls</td><td>${r.null_count}</td></tr>
+      </table>
+    `;
+    colDiv.innerHTML = statsHtml;
+
+    const canvas = document.createElement('canvas');
+    colDiv.appendChild(canvas);
+    overviewContainer.appendChild(colDiv);
+
+    if (isCategorical) {
+      const topCategoriesQuery = `SELECT "${r.column}", COUNT(*) AS count FROM ${relationIdentifier} GROUP BY 1 ORDER BY 2 DESC LIMIT 10`;
+      const topCategories = await connection.query(topCategoriesQuery);
+      const labels = topCategories.toArray().map((cat) => cat.toJSON()[r.column]);
+      const data = topCategories.toArray().map((cat) => cat.toJSON().count);
+
+      new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{ label: 'Top Categories', data: data }],
+        },
+      });
+    } else {
+      // For numerical, show a histogram
+      const histogramQuery = `SELECT HISTOGRAM("${r.column}") FROM ${relationIdentifier}`;
+      const histogramData = await connection.query(histogramQuery);
+      const histogram = histogramData.get(0)?.toJSON().histogram;
+      if (histogram) {
+        const labels = histogram.map((bin: any) => `${bin.min.toFixed(2)}-${bin.max.toFixed(2)}`);
+        const data = histogram.map((bin: any) => bin.count);
+
+        new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{ label: 'Distribution', data: data }],
+          },
+        });
+      }
+    }
+  }
+}
+
+function updateTablesList() {
+  if (!tablesList) {
+    return;
+  }
+  tablesList.innerHTML = '';
+  for (const table of loadedTables) {
+    const item = document.createElement('li');
+    item.textContent = table.relationIdentifier;
+    tablesList.appendChild(item);
+  }
 }
 
 function selectLoader(fileName: string): DataLoader {
@@ -266,7 +405,7 @@ function renderResults(table: Table | null) {
 
   for (let i = 0; i < table.numRows; i++) {
     const row = table.get(i);
-    if (!row) continue;
+    if (!row) {continue;}
 
     const raw: any[] = [];
     const display: string[] = [];
@@ -366,7 +505,7 @@ function applyTableState() {
       }
     }
     return normalizedFilters.every((filter, idx) => {
-      if (!filter) return true;
+      if (!filter) {return true;}
       return (row.display[idx] ?? '').toLowerCase().includes(filter);
     });
   });
@@ -460,7 +599,7 @@ function updateRowCount(visible: number, total: number) {
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
-  if (a === b) return 0;
+  if (a === b) {return 0;}
 
   const aIsNumber = typeof a === 'number' && Number.isFinite(a);
   const bIsNumber = typeof b === 'number' && Number.isFinite(b);
