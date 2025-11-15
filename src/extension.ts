@@ -5,83 +5,138 @@ import * as path from 'path';
 const COMMAND_ID = 'duckdb-viewer.viewFile';
 
 export function activate(context: vscode.ExtensionContext) {
-  const disposable = vscode.commands.registerCommand(COMMAND_ID, async (uri: vscode.Uri) => {
-    if (!uri) {
-      vscode.window.showWarningMessage('Please right-click a file from the explorer to use this command.');
-      return;
-    }
+  context.subscriptions.push(
+    vscode.commands.registerCommand(COMMAND_ID, (uri: vscode.Uri) => {
+      if (!uri) {
+        // If the command is run from the command palette, prompt the user for a file.
+        promptForFile().then((selectedUri) => {
+          if (selectedUri) {
+            ViewerPanel.getOrCreate(context).then((panel) => panel.loadFile(selectedUri));
+          }
+        });
+      } else {
+        // If the command is run from the context menu, use the provided URI.
+        ViewerPanel.getOrCreate(context).then((panel) => panel.loadFile(uri));
+      }
+    })
+  );
+}
+class ViewerPanel {
+  private static panel: ViewerPanel | undefined;
+  private readonly panel: vscode.WebviewPanel;
+  private readonly context: vscode.ExtensionContext;
+  private duckdbReady = false;
+  private pendingFiles: vscode.Uri[] = [];
 
-    const fileName = path.basename(uri.fsPath);
-
-    const panel = vscode.window.createWebviewPanel(
+  private constructor(context: vscode.ExtensionContext) {
+    this.context = context;
+    this.panel = vscode.window.createWebviewPanel(
       'duckdbDataViewer',
-      `DuckDB: ${fileName}`,
+      'DuckDB Data Viewer',
       vscode.ViewColumn.One,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')]
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')],
       }
     );
 
-    let pendingFile: { uri: vscode.Uri; fileName: string } | null = { uri, fileName };
-    let duckdbReady = false;
+    this.panel.onDidDispose(() => {
+      ViewerPanel.panel = undefined;
+    });
 
-    panel.webview.html = await getWebviewHtml(context, panel.webview);
-
-    const deliverPendingFile = async () => {
-      if (!duckdbReady || !pendingFile) {
-        return;
+    this.panel.webview.onDidReceiveMessage(async (message) => {
+      switch (message.command) {
+        case 'ready':
+          this.initializeDuckDB();
+          break;
+        case 'duckdb-ready':
+          this.duckdbReady = true;
+          this.deliverPendingFiles();
+          break;
+        case 'add-data-source':
+          this.promptForFileAndLoad();
+          break;
       }
+    });
+  }
 
-      const { uri: fileUri, fileName: pendingFileName } = pendingFile;
+  public static async getOrCreate(context: vscode.ExtensionContext): Promise<ViewerPanel> {
+    if (!ViewerPanel.panel) {
+      ViewerPanel.panel = new ViewerPanel(context);
+      await ViewerPanel.panel.initializeWebview();
+    }
+    ViewerPanel.panel.panel.reveal(vscode.ViewColumn.One);
+    return ViewerPanel.panel;
+  }
 
+  private async initializeWebview() {
+    this.panel.webview.html = await getWebviewHtml(this.context, this.panel.webview);
+  }
+
+  private async initializeDuckDB() {
+    try {
+      const bundles = await prepareDuckDBBundles(this.context, this.panel.webview);
+      this.panel.webview.postMessage({ command: 'init', bundles });
+    } catch (e) {
+      this.handleError(e);
+    }
+  }
+
+  public loadFile(uri: vscode.Uri) {
+    this.pendingFiles.push(uri);
+    this.deliverPendingFiles();
+  }
+
+  private async deliverPendingFiles() {
+    if (!this.duckdbReady || this.pendingFiles.length === 0) {
+      return;
+    }
+    const urisToLoad = [...this.pendingFiles];
+    this.pendingFiles = [];
+
+    for (const uri of urisToLoad) {
       try {
-        const fileBytes = await vscode.workspace.fs.readFile(fileUri);
-        panel.webview.postMessage({
+        const fileName = path.basename(uri.fsPath);
+        const fileBytes = await vscode.workspace.fs.readFile(uri);
+        this.panel.webview.postMessage({
           command: 'loadFile',
-          fileName: pendingFileName,
-          fileData: fileBytes
+          fileName,
+          fileData: fileBytes,
         });
       } catch (e) {
-        const message = e instanceof Error ? `Failed to read file: ${e.message}` : String(e);
-        panel.webview.postMessage({
-          command: 'error',
-          message
-        });
-        vscode.window.showErrorMessage(message);
-      } finally {
-        pendingFile = null;
+        this.handleError(e);
       }
-    };
+    }
+  }
 
-    panel.webview.onDidReceiveMessage(
-      async (message) => {
-        if (message.command === 'ready') {
-          try {
-            const bundles = await prepareDuckDBBundles(context, panel.webview);
-            panel.webview.postMessage({ command: 'init', bundles });
-          } catch (e) {
-            panel.webview.postMessage({
-              command: 'error',
-              message: e instanceof Error ? e.message : String(e)
-            });
-          }
-        }
+  private async promptForFileAndLoad() {
+    const uri = await promptForFile();
+    if (uri) {
+      this.loadFile(uri);
+    }
+  }
 
-        if (message.command === 'duckdb-ready') {
-          duckdbReady = true;
-          await deliverPendingFile();
-        }
-      },
-      undefined,
-      context.subscriptions
-    );
+  private handleError(e: unknown) {
+    const message = e instanceof Error ? `Failed to read file: ${e.message}` : String(e);
+    this.panel.webview.postMessage({
+      command: 'error',
+      message,
+    });
+    vscode.window.showErrorMessage(message);
+  }
+}
 
-    panel.reveal(vscode.ViewColumn.One);
-  });
-
-  context.subscriptions.push(disposable);
+async function promptForFile(): Promise<vscode.Uri | undefined> {
+  const options: vscode.OpenDialogOptions = {
+    canSelectMany: false,
+    openLabel: 'Select a data file',
+    filters: {
+      'Data files': ['csv', 'parquet', 'sqlite', 'arrow'],
+    },
+  };
+  const fileUris = await vscode.window.showOpenDialog(options);
+  return fileUris?.[0];
 }
 
 // Helper to read a worker file from dist into a string
