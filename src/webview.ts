@@ -19,6 +19,61 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const themeToggleButton = document.getElementById('theme-toggle') as HTMLButtonElement | null;
+const launchPartyButton = document.getElementById('launch-party') as HTMLButtonElement | null;
+const galaxyTicker = document.getElementById('galaxy-ticker');
+
+const telemetryElements = {
+  visible: {
+    value: document.getElementById('metric-visible-rows'),
+    note: document.getElementById('note-visible-rows'),
+    card: document.getElementById('card-visible-rows'),
+  },
+  total: {
+    value: document.getElementById('metric-total-rows'),
+    note: document.getElementById('note-total-rows'),
+    card: document.getElementById('card-total-rows'),
+  },
+  columns: {
+    value: document.getElementById('metric-columns'),
+    note: document.getElementById('note-columns'),
+    card: document.getElementById('card-columns'),
+  },
+  time: {
+    value: document.getElementById('metric-query-time'),
+    note: document.getElementById('note-query-time'),
+    card: document.getElementById('card-query-time'),
+  },
+} as const;
+
+type TelemetryKey = keyof typeof telemetryElements;
+
+const telemetryFlashTimers = new Map<TelemetryKey, number>();
+
+const cosmicTickerPhrases = [
+  'Data dragons awakened. Feed them numbers.',
+  'Hyperdrive calibrating. Hold on to your schemas.',
+  'Quantum columns aligning across multiverses.',
+  'Summoning parquet phoenix. Expect glitter.',
+  'Warping CSVs into shimmering constellations.',
+  'DuckDB oracles chanting in ANSI SQL.',
+  'Slicing datasets thinner than photons.',
+];
+
+let lastQueryDurationMs = 0;
+let lastQueryText = '';
+let totalRowCount = 0;
+let visibleRowCount = 0;
+
+const cosmicCelebrations = [
+  'Warp factor %speed engaged. %rows rows shimmer into focus!',
+  'Quantum query stitched %rows rows in %speed. Reality recompiled.',
+  'DuckDB lasers etched %rows rows at %speed. Pure spectacle.',
+  'Data nebula parted: %rows rows swirling at %speed.',
+  'Holographic grid stabilized: %rows rows, %speed to parse.',
+];
+
+const numberFormatter = new Intl.NumberFormat();
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -95,6 +150,18 @@ if (copySqlButton) {
       console.warn('[Webview] Clipboard copy failed', err);
     }
   });
+}
+
+themeToggleButton?.addEventListener('click', () => {
+  toggleHyperTheme();
+});
+
+launchPartyButton?.addEventListener('click', () => {
+  triggerDataParty();
+});
+
+if (themeToggleButton) {
+  themeToggleButton.textContent = 'Engage Aurora Mode';
 }
 
 // --- Core Functions ---
@@ -192,8 +259,12 @@ async function handleFileLoad(fileName: string, fileData: any) {
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
 
-  if (controls) controls.style.display = 'flex';
-  if (resultsContainer) resultsContainer.style.display = 'block';
+  if (controls) {
+    controls.style.display = 'flex';
+  }
+  if (resultsContainer) {
+    resultsContainer.style.display = 'block';
+  }
 
   await runQuery(defaultQuery);
 }
@@ -225,15 +296,18 @@ async function runQuery(sql: string) {
   if (!connection) {
     throw new Error("No database connection.");
   }
-  
+
   // Show status bar for "Running query..."
   updateStatus('Running query...');
   runButton.disabled = true;
 
   try {
+    const start = performance.now();
     const result = await connection.query(sql);
-    renderResults(result);
-    
+    const duration = performance.now() - start;
+    renderResults(result, duration, sql);
+    celebrateQuerySuccess(result?.numRows ?? 0, duration);
+
     // --- CHANGE ---
     // Hide the status bar on success
     if (statusWrapper) {
@@ -248,7 +322,7 @@ async function runQuery(sql: string) {
   }
 }
 
-function renderResults(table: Table | null) {
+function renderResults(table: Table | null, durationMs = 0, sql = '') {
   if (!resultsContainer) {
     return;
   }
@@ -257,7 +331,14 @@ function renderResults(table: Table | null) {
     resultsContainer.innerHTML = '<div class="empty-state">Query completed. No rows returned.</div>';
     currentTableData = null;
     tableBodyElement = null;
+    totalRowCount = 0;
+    visibleRowCount = 0;
+    lastQueryDurationMs = durationMs;
+    if (sql) {
+      lastQueryText = sql;
+    }
     updateRowCount(0, 0);
+    updateTelemetry({ visible: 0, total: 0, columns: 0, duration: durationMs });
     return;
   }
 
@@ -266,7 +347,9 @@ function renderResults(table: Table | null) {
 
   for (let i = 0; i < table.numRows; i++) {
     const row = table.get(i);
-    if (!row) continue;
+    if (!row) {
+      continue;
+    }
 
     const raw: any[] = [];
     const display: string[] = [];
@@ -291,6 +374,19 @@ function renderResults(table: Table | null) {
 
   resultsContainer.style.display = 'block';
   resultsContainer.scrollTop = 0;
+
+  totalRowCount = rows.length;
+  lastQueryDurationMs = durationMs;
+  visibleRowCount = rows.length;
+  if (sql) {
+    lastQueryText = sql;
+  }
+  updateTelemetry({
+    visible: rows.length,
+    total: rows.length,
+    columns: columns.length,
+    duration: durationMs,
+  });
 }
 
 function buildTableSkeleton(columns: string[]) {
@@ -366,7 +462,9 @@ function applyTableState() {
       }
     }
     return normalizedFilters.every((filter, idx) => {
-      if (!filter) return true;
+      if (!filter) {
+        return true;
+      }
       return (row.display[idx] ?? '').toLowerCase().includes(filter);
     });
   });
@@ -456,11 +554,16 @@ function updateRowCount(visible: number, total: number) {
   if (!rowCountLabel) {
     return;
   }
-  rowCountLabel.textContent = '';
+  rowCountLabel.textContent = `${formatNumber(visible)} visible / ${formatNumber(total)} total rows`; // display new info
+  visibleRowCount = visible;
+  totalRowCount = total;
+  updateTelemetry({ visible, total });
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
-  if (a === b) return 0;
+  if (a === b) {
+    return 0;
+  }
 
   const aIsNumber = typeof a === 'number' && Number.isFinite(a);
   const bIsNumber = typeof b === 'number' && Number.isFinite(b);
@@ -499,6 +602,234 @@ function formatCell(value: any): string {
   return String(value);
 }
 
+function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+  return numberFormatter.format(Math.round(value));
+}
+
+function formatDuration(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return '0 ms';
+  }
+  if (durationMs < 1000) {
+    const precision = durationMs < 100 ? 1 : 0;
+    return `${durationMs.toFixed(precision)} ms`;
+  }
+  return `${(durationMs / 1000).toFixed(2)} s`;
+}
+
+function describeVisibleRows(visible: number, total: number): string {
+  if (total === 0) {
+    return 'Filters awaiting activation.';
+  }
+  if (visible === 0) {
+    return 'Filters vaporized every row—check your constraints!';
+  }
+  if (visible === total) {
+    return 'Full-spectrum nebula in view.';
+  }
+  return `${formatNumber(visible)} rays from ${formatNumber(total)} starfield.`;
+}
+
+function describeTotalRows(total: number): string {
+  if (total === 0) {
+    return 'No data on deck.';
+  }
+  if (total < 1000) {
+    return 'Intimate constellation—perfect for detailed cartography.';
+  }
+  if (total < 100000) {
+    return 'Swirling galaxy of insights ready for warp plotting.';
+  }
+  return 'Megacluster inbound. Prepare the antimatter aggregations.';
+}
+
+function describeColumns(columns: number): string {
+  if (columns === 0) {
+    return 'Awaiting schema transmission.';
+  }
+  if (columns < 5) {
+    return 'Minimal orbit: sleek and lightning-fast.';
+  }
+  if (columns < 15) {
+    return 'Balanced constellation—gravity just right.';
+  }
+  return 'Column supernova! Deploying holographic axes.';
+}
+
+function describeQueryTime(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return lastQueryText ? `No jumps recorded · “${abbreviateQuery(lastQueryText)}”` : 'No jumps recorded.';
+  }
+  if (durationMs < 10) {
+    return `Blink-and-you-miss-it warp${lastQueryText ? ` · “${abbreviateQuery(lastQueryText)}”` : ''}`;
+  }
+  if (durationMs < 40) {
+    return `Hyperspace corridor silky smooth${lastQueryText ? ` · “${abbreviateQuery(lastQueryText)}”` : ''}`;
+  }
+  if (durationMs < 120) {
+    return `Quantum thrusters humming elegantly${lastQueryText ? ` · “${abbreviateQuery(lastQueryText)}”` : ''}`;
+  }
+  if (durationMs < 600) {
+    return `Sonic boom across the data ether${lastQueryText ? ` · “${abbreviateQuery(lastQueryText)}”` : ''}`;
+  }
+  return `Gravity wells detected—time for indices or snacks${lastQueryText ? ` · “${abbreviateQuery(lastQueryText)}”` : ''}`;
+}
+
+function abbreviateQuery(query: string): string {
+  const compact = query.replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return '∅';
+  }
+  return compact.length > 48 ? `${compact.slice(0, 45)}…` : compact;
+}
+
+function updateTelemetry(update: { visible?: number; total?: number; columns?: number; duration?: number }) {
+  if (update.visible !== undefined) {
+    const element = telemetryElements.visible.value;
+    if (element) {
+      element.textContent = formatNumber(update.visible);
+    }
+    const note = telemetryElements.visible.note;
+    if (note) {
+      const total = update.total ?? totalRowCount;
+      note.textContent = describeVisibleRows(update.visible, total);
+    }
+    flashTelemetryCard('visible');
+  }
+
+  if (update.total !== undefined) {
+    const element = telemetryElements.total.value;
+    if (element) {
+      element.textContent = formatNumber(update.total);
+    }
+    const note = telemetryElements.total.note;
+    if (note) {
+      note.textContent = describeTotalRows(update.total);
+    }
+    flashTelemetryCard('total');
+  }
+
+  if (update.columns !== undefined) {
+    const element = telemetryElements.columns.value;
+    if (element) {
+      element.textContent = formatNumber(update.columns);
+    }
+    const note = telemetryElements.columns.note;
+    if (note) {
+      note.textContent = describeColumns(update.columns);
+    }
+    flashTelemetryCard('columns');
+  }
+
+  if (update.duration !== undefined) {
+    const element = telemetryElements.time.value;
+    if (element) {
+      element.textContent = formatDuration(update.duration);
+    }
+    const note = telemetryElements.time.note;
+    if (note) {
+      note.textContent = describeQueryTime(update.duration);
+    }
+    flashTelemetryCard('time');
+  }
+}
+
+function flashTelemetryCard(key: TelemetryKey) {
+  const card = telemetryElements[key].card as HTMLElement | null;
+  if (!card) {
+    return;
+  }
+
+  card.classList.add('active');
+
+  const existing = telemetryFlashTimers.get(key);
+  if (existing) {
+    window.clearTimeout(existing);
+  }
+  const timeout = window.setTimeout(() => {
+    card.classList.remove('active');
+    telemetryFlashTimers.delete(key);
+  }, 1600);
+  telemetryFlashTimers.set(key, timeout);
+}
+
+function toggleHyperTheme() {
+  const isAlt = document.body.classList.toggle('hyper-theme-alt');
+  if (themeToggleButton) {
+    themeToggleButton.textContent = isAlt ? 'Return to Cosmic Night' : 'Engage Aurora Mode';
+  }
+  broadcastTicker(isAlt ? 'Aurora mode engaged. Hues recalibrated for data stargazing.' : 'Hyperdrive default restored. Infinite midnight resumes.');
+}
+
+function triggerDataParty() {
+  const sparks = 28;
+  for (let i = 0; i < sparks; i++) {
+    spawnSparkle();
+  }
+  broadcastTicker('Data party launched! Sparkles deployed across the schema horizon.');
+}
+
+function spawnSparkle() {
+  const sparkle = document.createElement('div');
+  sparkle.className = 'data-sparkle';
+  const left = Math.random() * 100;
+  sparkle.style.left = `${left}vw`;
+  sparkle.style.top = `${-10 - Math.random() * 20}vh`;
+  sparkle.style.animationDuration = `${1.2 + Math.random() * 0.8}s`;
+  sparkle.style.animationDelay = `${Math.random() * 0.4}s`;
+  document.body.appendChild(sparkle);
+  window.setTimeout(() => {
+    sparkle.remove();
+  }, 2400);
+}
+
+function celebrateQuerySuccess(rows: number, durationMs: number) {
+  if (rows <= 0) {
+    broadcastTicker('Query executed at warp speed but returned the void. The void sparkles nonetheless.');
+    return;
+  }
+  const template = randomFrom(cosmicCelebrations);
+  if (!template) {
+    return;
+  }
+  const formattedRows = formatNumber(rows);
+  const formattedSpeed = formatDuration(durationMs);
+  const message = template.replace('%rows', formattedRows).replace('%speed', formattedSpeed);
+  broadcastTicker(message);
+}
+
+let lastTickerUpdate = Date.now();
+
+function broadcastTicker(message: string) {
+  if (!galaxyTicker) {
+    return;
+  }
+  galaxyTicker.textContent = message;
+  lastTickerUpdate = Date.now();
+}
+
+function randomFrom<T>(source: T[]): T | null {
+  if (!source.length) {
+    return null;
+  }
+  const index = Math.floor(Math.random() * source.length);
+  return source[index] ?? null;
+}
+
+window.setInterval(() => {
+  const now = Date.now();
+  if (now - lastTickerUpdate < 22000) {
+    return;
+  }
+  const headline = randomFrom(cosmicTickerPhrases);
+  if (headline) {
+    broadcastTicker(headline);
+  }
+}, 26000);
+
 // ---
 // Helpers
 // ---
@@ -527,10 +858,11 @@ function updateStatus(message: string) {
     status.textContent = message;
     status.classList.remove('error'); // Remove error style if it was there
   }
+  broadcastTicker(message);
 }
 function reportError(e: any) {
   const message = e instanceof Error ? e.message : String(e);
-  
+
   // Always make the status bar visible for errors
   if (statusWrapper) {
     statusWrapper.style.display = 'block';
@@ -539,6 +871,7 @@ function reportError(e: any) {
     status.textContent = `Error: ${message}`;
     status.classList.add('error'); // Add a red error style
   }
+  broadcastTicker(`Error detected: ${message}`);
   console.error(`[Error] ${message}`, e);
 }
 

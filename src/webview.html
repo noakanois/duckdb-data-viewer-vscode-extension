@@ -18,11 +18,23 @@
   <script type="module" nonce="{{nonce}}" src="{{toolkit_uri}}"></script>
   <style>
     :root {
-      --panel-bg: var(--vscode-editorWidget-background);
-      --panel-border: var(--vscode-editorWidget-border);
+      --panel-bg: color-mix(in srgb, var(--vscode-editorWidget-background) 85%, transparent);
+      --panel-border: color-mix(in srgb, var(--vscode-editorWidget-border) 60%, transparent);
       --muted: var(--vscode-descriptionForeground);
       --accent: var(--vscode-button-background);
       --column-header-height: 44px;
+      --hyper-accent: #ff5df4;
+      --hyper-secondary: #00f0ff;
+      --hyper-dark: rgba(10, 6, 31, 0.85);
+      --hyper-grid: rgba(255, 255, 255, 0.08);
+      --hyper-contrast: rgba(255, 255, 255, 0.6);
+    }
+    body.hyper-theme-alt {
+      --hyper-accent: #ffd166;
+      --hyper-secondary: #06d6a0;
+      --hyper-dark: rgba(20, 7, 43, 0.88);
+      --hyper-grid: rgba(255, 255, 255, 0.1);
+      --hyper-contrast: rgba(255, 255, 255, 0.7);
     }
     * {
       box-sizing: border-box;
@@ -30,34 +42,205 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0;
-      padding: 20px;
+      padding: 24px 28px;
       background-color: var(--vscode-editor-background);
       color: var(--vscode-editor-foreground);
       height: 100vh;
       display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: -3;
+    }
+    body::before {
+      background: radial-gradient(circle at 10% 10%, rgba(255, 0, 102, 0.24), transparent 45%),
+        radial-gradient(circle at 90% 20%, rgba(0, 247, 255, 0.3), transparent 50%),
+        radial-gradient(circle at 50% 80%, rgba(120, 0, 255, 0.2), transparent 55%),
+        linear-gradient(135deg, rgba(16, 12, 45, 0.92), rgba(9, 3, 25, 0.88));
+      filter: blur(0.5px) saturate(140%);
+      animation: nebulaPulse 18s ease-in-out infinite alternate;
+    }
+    body::after {
+      background-image: linear-gradient(
+          135deg,
+          transparent 0,
+          transparent 48%,
+          rgba(255, 255, 255, 0.08) 50%,
+          transparent 52%,
+          transparent 100%
+        );
+      background-size: 220px 220px;
+      opacity: 0.4;
+      mix-blend-mode: screen;
+      transform: translate3d(0, 0, 0);
+      animation: starDrift 40s linear infinite;
     }
     .app-shell {
       display: flex;
       flex-direction: column;
       gap: 16px;
       width: 100%;
+      position: relative;
+      z-index: 1;
     }
-    #status-wrapper {
-      background: var(--panel-bg);
+    .hyper-atmosphere {
+      position: absolute;
+      inset: -30vh -60vw;
+      pointer-events: none;
+      z-index: -2;
+      filter: drop-shadow(0 0 60px rgba(255, 255, 255, 0.35));
+      opacity: 0.35;
+    }
+    .hyper-atmosphere .orb {
+      position: absolute;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0));
+      animation: orbFloat 22s infinite;
+      mix-blend-mode: screen;
+    }
+    .hyper-atmosphere .orb:nth-child(1) {
+      width: 30vw;
+      height: 30vw;
+      top: 10vh;
+      right: -20vw;
+      animation-delay: -4s;
+    }
+    .hyper-atmosphere .orb:nth-child(2) {
+      width: 24vw;
+      height: 24vw;
+      bottom: -12vh;
+      left: -10vw;
+      animation-delay: -11s;
+    }
+    .hyper-atmosphere .orb:nth-child(3) {
+      width: 18vw;
+      height: 18vw;
+      top: 40vh;
+      left: 30vw;
+      animation-delay: -18s;
+    }
+    header.hyper-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: center;
+      padding: 22px 26px;
+      border-radius: 16px;
       border: 1px solid var(--panel-border);
-      border-radius: 10px;
-      padding: 16px 20px;
+      background: color-mix(in srgb, var(--hyper-dark) 94%, transparent);
+      backdrop-filter: blur(16px) saturate(140%);
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 40px 80px rgba(0, 0, 0, 0.25);
+    }
+    header.hyper-header::before {
+      content: '';
+      position: absolute;
+      inset: -40% -20%;
+      background: conic-gradient(from 90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0));
+      animation: sweep 16s linear infinite;
+      opacity: 0.8;
+    }
+    header.hyper-header::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 93, 244, 0.16), transparent);
+      mix-blend-mode: screen;
+      pointer-events: none;
+    }
+    .hyper-title h1 {
+      margin: 0;
+      font-size: 26px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: color-mix(in srgb, var(--hyper-accent) 65%, var(--vscode-editor-foreground));
+    }
+    .hyper-title p {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: var(--hyper-contrast);
+      letter-spacing: 0.04em;
+    }
+    .hyper-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    .hyper-actions button {
+      border-radius: 999px;
+      background: linear-gradient(120deg, var(--hyper-accent), var(--hyper-secondary));
+      color: #050309;
+      border: none;
+      padding: 10px 22px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      box-shadow: 0 10px 25px rgba(0, 255, 235, 0.35);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .hyper-actions button:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 16px 45px rgba(255, 96, 244, 0.5);
+    }
+    .hyper-actions button.secondary {
+      background: transparent;
+      color: var(--hyper-contrast);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: none;
+    }
+    .galaxy-ticker {
+      margin-top: 12px;
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--hyper-contrast);
       display: flex;
       align-items: center;
       gap: 12px;
-      min-height: 56px;
+    }
+    .galaxy-ticker::before {
+      content: '✦';
+      color: var(--hyper-accent);
+      animation: tickerGlow 2.8s ease-in-out infinite;
+    }
+    #status-wrapper {
+      background: color-mix(in srgb, var(--hyper-dark) 80%, transparent);
+      border: 1px solid color-mix(in srgb, var(--panel-border) 60%, transparent);
+      border-radius: 14px;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-height: 64px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 20px 40px rgba(0, 0, 0, 0.4);
+      position: relative;
+      overflow: hidden;
+    }
+    #status-wrapper::before {
+      content: '';
+      position: absolute;
+      inset: -50% -20%;
+      background: conic-gradient(from 140deg, rgba(255, 255, 255, 0.2), transparent 55%);
+      opacity: 0.7;
+      animation: sweep 26s linear infinite;
+      pointer-events: none;
     }
     #status {
       font-weight: 500;
       flex: 1;
+      letter-spacing: 0.02em;
     }
     #status.error {
       color: var(--vscode-errorForeground);
+      text-shadow: 0 0 12px rgba(255, 0, 72, 0.5);
     }
     main {
       flex: 1;
@@ -67,14 +250,26 @@
       min-height: 0;
     }
     .panel {
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 12px;
-      padding: 16px 20px;
+      background: color-mix(in srgb, var(--hyper-dark) 86%, transparent);
+      border: 1px solid color-mix(in srgb, var(--panel-border) 60%, transparent);
+      border-radius: 16px;
+      padding: 20px 24px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
       min-height: 0;
+      backdrop-filter: blur(12px) saturate(120%);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 30px 60px rgba(0, 0, 0, 0.35);
+      position: relative;
+      overflow: hidden;
+    }
+    .panel::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 93, 244, 0.08), transparent 60%);
+      mix-blend-mode: screen;
+      pointer-events: none;
     }
     .panel-heading {
       display: flex;
@@ -85,8 +280,10 @@
     }
     .panel-heading h2 {
       margin: 0;
-      font-size: 16px;
-      font-weight: 600;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
     .panel-heading p {
       margin: 2px 0 0 0;
@@ -96,11 +293,12 @@
     #global-search {
       flex: 1;
       min-width: 220px;
-      border-radius: 8px;
-      border: 1px solid var(--panel-border);
-      background: var(--vscode-editor-background);
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(12, 8, 32, 0.8);
       color: inherit;
-      padding: 8px 12px;
+      padding: 10px 18px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
     }
     #results-panel {
       flex: 1;
@@ -108,11 +306,11 @@
     #results-container {
       display: none;
       flex: 1;
-      border-radius: 10px;
-      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
       overflow: auto;
-      background: var(--vscode-editor-background);
-      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+      background: rgba(6, 3, 20, 0.65);
+      box-shadow: inset 0 20px 40px rgba(0, 0, 0, 0.35);
     }
     table {
       width: 100%;
@@ -143,10 +341,11 @@
       border-bottom: 1px solid var(--panel-border);
     }
     tbody tr:nth-child(even) {
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(255, 255, 255, 0.05);
     }
     tbody tr:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: rgba(0, 255, 255, 0.08);
+      box-shadow: inset 0 0 0 1px rgba(0, 255, 255, 0.15);
     }
     .empty-row {
       text-align: center;
@@ -163,14 +362,28 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 10px 12px;
+      padding: 12px 16px;
       cursor: pointer;
+      position: relative;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
     .header-button .sort-indicator {
       font-size: 10px;
       color: var(--muted);
       width: 10px;
       text-align: right;
+    }
+    .header-button::after {
+      content: '';
+      position: absolute;
+      inset: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      transition: border-color 0.3s ease;
+    }
+    .header-button:hover::after {
+      border-color: rgba(255, 255, 255, 0.12);
     }
     .header-button[data-sort="asc"] .sort-indicator::after {
       content: "▲";
@@ -181,14 +394,17 @@
     .filter-row input {
       width: 100%;
       border: none;
-      border-top: 1px solid var(--panel-border);
-      padding: 8px 10px;
-      background: rgba(255, 255, 255, 0.02);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.06);
       color: inherit;
-      font-size: 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
     .filter-row input:focus {
-      outline: 1px solid var(--accent);
+      outline: 1px solid var(--hyper-secondary);
+      background: rgba(0, 255, 255, 0.08);
     }
     .empty-state {
       padding: 60px 0;
@@ -198,8 +414,10 @@
     }
     #row-count {
       font-size: 12px;
-      color: var(--muted);
-      margin-top: 2px;
+      color: var(--hyper-contrast);
+      margin-top: 4px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
     }
     #controls {
       display: none;
@@ -209,16 +427,16 @@
     #sql-input {
       width: 100%;
       min-height: 160px;
-      padding: 14px 16px;
-      border-radius: 10px;
-      border: 1px solid var(--panel-border);
-      background-color: var(--vscode-editor-background);
+      padding: 16px 18px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background-color: rgba(7, 3, 26, 0.72);
       color: inherit;
       font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.55;
       resize: vertical;
-      box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
     }
     .sql-actions {
       display: flex;
@@ -227,45 +445,222 @@
       flex-wrap: wrap;
     }
     button {
-      border-radius: 8px;
+      border-radius: 10px;
       border: 1px solid transparent;
       font-size: 13px;
-      padding: 8px 14px;
+      padding: 10px 16px;
       cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
     #run-query {
-      background-color: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-      border-color: var(--vscode-button-border, transparent);
+      background: linear-gradient(120deg, var(--hyper-secondary), var(--hyper-accent));
+      color: #050309;
+      border: none;
+      box-shadow: 0 12px 32px rgba(0, 255, 242, 0.3);
     }
     #run-query:disabled {
       opacity: 0.6;
       cursor: default;
     }
     #copy-sql {
-      background: transparent;
+      background: rgba(255, 255, 255, 0.08);
       color: inherit;
-      border: 1px solid var(--panel-border);
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
     .sql-hints {
-      font-size: 12px;
-      color: var(--muted);
+      font-size: 11px;
+      color: var(--hyper-contrast);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
     }
     .sql-grid {
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 18px;
+      width: 100%;
+    }
+    .telemetry-card {
+      position: relative;
+      padding: 16px 18px 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(10, 6, 31, 0.75);
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 16px 32px rgba(0, 0, 0, 0.45);
+    }
+    .telemetry-card::after {
+      content: '';
+      position: absolute;
+      inset: -40% -10%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.18), transparent 60%);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+    .telemetry-card.active::after {
+      opacity: 1;
+    }
+    .telemetry-label {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--hyper-contrast);
+    }
+    .telemetry-value {
+      margin-top: 10px;
+      font-size: 28px;
+      font-weight: 700;
+      color: color-mix(in srgb, var(--hyper-secondary) 60%, var(--vscode-editor-foreground));
+      text-shadow: 0 0 15px rgba(0, 255, 255, 0.45);
+    }
+    .telemetry-note {
+      margin-top: 8px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.55);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .telemetry-constellation {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.4;
+      background-image: linear-gradient(135deg, transparent 45%, rgba(255, 255, 255, 0.2) 50%, transparent 55%);
+      background-size: 220px 220px;
+      animation: starDrift 26s linear infinite;
+      mix-blend-mode: screen;
+    }
+    .data-sparkle {
+      position: fixed;
+      width: 8px;
+      height: 120px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0));
+      border-radius: 999px;
+      pointer-events: none;
+      z-index: 999;
+      animation: sparkleFall 1.6s ease-out forwards;
+      mix-blend-mode: screen;
+    }
+    .data-sparkle::after {
+      content: '';
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0));
+    }
+    .hyper-gridlines {
+      position: absolute;
+      inset: -60px;
+      background: radial-gradient(circle at center, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.7)),
+        linear-gradient(transparent, transparent 14px, rgba(255, 255, 255, 0.07) 14px, transparent 15px),
+        linear-gradient(90deg, transparent, transparent 14px, rgba(255, 255, 255, 0.07) 14px, transparent 15px);
+      background-size: 60px 60px;
+      opacity: 0.3;
+      pointer-events: none;
+      z-index: -1;
+      transform: perspective(600px) rotateX(60deg) translateY(40%);
+      animation: gridPulse 10s ease-in-out infinite;
+    }
+    @keyframes nebulaPulse {
+      0% { transform: scale(1) translate3d(0, 0, 0); }
+      100% { transform: scale(1.05) translate3d(0, -2%, 0); }
+    }
+    @keyframes starDrift {
+      0% { transform: translate3d(0, 0, 0); }
+      100% { transform: translate3d(-200px, -220px, 0); }
+    }
+    @keyframes orbFloat {
+      0% { transform: translate3d(0, 0, 0) scale(1); }
+      50% { transform: translate3d(8%, -6%, 0) scale(1.08); }
+      100% { transform: translate3d(-4%, 4%, 0) scale(0.97); }
+    }
+    @keyframes sweep {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes tickerGlow {
+      0%, 100% { text-shadow: 0 0 6px rgba(255, 255, 255, 0.6); opacity: 1; }
+      50% { text-shadow: 0 0 20px rgba(255, 255, 255, 0.9); opacity: 0.6; }
+    }
+    @keyframes sparkleFall {
+      0% { opacity: 0; transform: translate3d(0, -40px, 0) scale(0.5); }
+      20% { opacity: 1; }
+      100% { opacity: 0; transform: translate3d(30px, 400px, 0) scale(0.2); }
+    }
+    @keyframes gridPulse {
+      0%, 100% { opacity: 0.22; }
+      50% { opacity: 0.38; }
+    }
   </style>
 </head>
 <body>
+  <div class="hyper-atmosphere" aria-hidden="true">
+    <div class="orb"></div>
+    <div class="orb"></div>
+    <div class="orb"></div>
+  </div>
   <div class="app-shell">
+    <header class="hyper-header">
+      <div class="hyper-title">
+        <h1>DuckDB Hyperdrive</h1>
+        <p>One viewer to bend every dataset into a cosmic kaleidoscope.</p>
+        <div class="galaxy-ticker" id="galaxy-ticker">Systems online. Awaiting coordinates.</div>
+      </div>
+      <div class="hyper-actions">
+        <button id="launch-party" class="secondary">Launch Data Party</button>
+        <button id="theme-toggle">Toggle Hyper Theme</button>
+      </div>
+    </header>
+
     <div id="status-wrapper">
       <div id="status">Initializing…</div>
     </div>
 
+    <section class="panel" id="telemetry-panel">
+      <div class="telemetry-constellation" aria-hidden="true"></div>
+      <div class="panel-heading">
+        <div>
+          <h2>Hyper Telemetry</h2>
+          <p>Real-time numbers from the DuckDB warp core.</p>
+        </div>
+      </div>
+      <div class="telemetry-grid">
+        <div class="telemetry-card" id="card-visible-rows">
+          <div class="telemetry-label">Visible Rows</div>
+          <div class="telemetry-value" id="metric-visible-rows">0</div>
+          <div class="telemetry-note" id="note-visible-rows">Filters awaiting activation.</div>
+        </div>
+        <div class="telemetry-card" id="card-total-rows">
+          <div class="telemetry-label">Rows Loaded</div>
+          <div class="telemetry-value" id="metric-total-rows">0</div>
+          <div class="telemetry-note" id="note-total-rows">No data on deck.</div>
+        </div>
+        <div class="telemetry-card" id="card-columns">
+          <div class="telemetry-label">Columns Orbiting</div>
+          <div class="telemetry-value" id="metric-columns">0</div>
+          <div class="telemetry-note" id="note-columns">Awaiting schema transmission.</div>
+        </div>
+        <div class="telemetry-card" id="card-query-time">
+          <div class="telemetry-label">Warp Speed</div>
+          <div class="telemetry-value" id="metric-query-time">0 ms</div>
+          <div class="telemetry-note" id="note-query-time">No jumps recorded.</div>
+        </div>
+      </div>
+    </section>
+
     <main>
       <section class="panel" id="results-panel">
+        <div class="hyper-gridlines" aria-hidden="true"></div>
         <div class="panel-heading">
           <div>
             <h2>Data Preview</h2>
