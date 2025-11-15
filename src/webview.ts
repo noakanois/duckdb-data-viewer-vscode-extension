@@ -19,6 +19,12 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const liveQueryCheckbox = document.getElementById('live-query-checkbox') as HTMLInputElement;
+const schemaContainer = document.getElementById('schema-container');
+const chartCanvas = document.getElementById('chart-canvas') as HTMLCanvasElement;
+const chartTypeDropdown = document.getElementById('chart-type-dropdown') as HTMLSelectElement;
+const xAxisDropdown = document.getElementById('x-axis-dropdown') as HTMLSelectElement;
+const yAxisDropdown = document.getElementById('y-axis-dropdown') as HTMLSelectElement;
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -41,6 +47,9 @@ let globalFilter = '';
 let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex: -1, direction: null };
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
+let liveQueryTimeout: number | undefined;
+let isLiveQueryEnabled = true;
+let chart: any | null = null;
 const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
 
 // --- Event Listeners (Moved to top) ---
@@ -69,6 +78,23 @@ sqlInput.addEventListener('keydown', (event: KeyboardEvent) => {
     event.preventDefault();
     runQuery(sqlInput.value).catch(reportError);
   }
+});
+
+// Live query checkbox
+liveQueryCheckbox.addEventListener('change', () => {
+    isLiveQueryEnabled = liveQueryCheckbox.checked;
+});
+
+// Live query input listener
+sqlInput.addEventListener('input', () => {
+    if (!isLiveQueryEnabled) {
+        return;
+    }
+
+    clearTimeout(liveQueryTimeout);
+    liveQueryTimeout = window.setTimeout(() => {
+        runQuery(sqlInput.value).catch(reportError);
+    }, 500);
 });
 
 // Global search box to filter visible rows
@@ -248,6 +274,44 @@ async function runQuery(sql: string) {
   }
 }
 
+function renderSchema(table: Table | null) {
+    if (!schemaContainer) {
+        return;
+    }
+
+    if (!table) {
+        schemaContainer.innerHTML = '<div class="empty-state">No schema to display.</div>';
+        return;
+    }
+
+    const schema = table.schema;
+    const fields = schema.fields;
+
+    if (fields.length === 0) {
+        schemaContainer.innerHTML = '<div class="empty-state">No columns in schema.</div>';
+        return;
+    }
+
+    schemaContainer.innerHTML = '';
+
+    fields.forEach(field => {
+        const item = document.createElement('div');
+        item.className = 'schema-item';
+
+        const name = document.createElement('span');
+        name.className = 'schema-name';
+        name.textContent = field.name;
+
+        const type = document.createElement('span');
+        type.textContent = String(field.type);
+
+        item.appendChild(name);
+        item.appendChild(type);
+
+        schemaContainer.appendChild(item);
+    });
+}
+
 function renderResults(table: Table | null) {
   if (!resultsContainer) {
     return;
@@ -258,11 +322,30 @@ function renderResults(table: Table | null) {
     currentTableData = null;
     tableBodyElement = null;
     updateRowCount(0, 0);
+    renderSchema(null);
     return;
   }
 
+  renderSchema(table);
+
   const rows: TableRow[] = [];
   const columns = table.schema.fields.map((field) => field.name);
+
+  // Populate axis dropdowns
+  xAxisDropdown.innerHTML = '';
+  yAxisDropdown.innerHTML = '';
+  columns.forEach(column => {
+      const option = document.createElement('vscode-option') as any;
+      option.value = column;
+      option.textContent = column;
+      xAxisDropdown.appendChild(option.cloneNode(true));
+      yAxisDropdown.appendChild(option);
+  });
+
+  // Add event listeners
+  chartTypeDropdown.addEventListener('change', () => renderChart().catch(reportError));
+  xAxisDropdown.addEventListener('change', () => renderChart().catch(reportError));
+  yAxisDropdown.addEventListener('change', () => renderChart().catch(reportError));
 
   for (let i = 0; i < table.numRows; i++) {
     const row = table.get(i);
@@ -291,6 +374,8 @@ function renderResults(table: Table | null) {
 
   resultsContainer.style.display = 'block';
   resultsContainer.scrollTop = 0;
+
+  renderChart().catch(reportError);
 }
 
 function buildTableSkeleton(columns: string[]) {
@@ -542,6 +627,52 @@ function reportError(e: any) {
   console.error(`[Error] ${message}`, e);
 }
 
-// Send the 'ready' signal to the extension to start the handshake
-updateStatus('Webview loaded. Sending "ready" to extension.');
-vscode.postMessage({ command: 'ready' });
+window.addEventListener('DOMContentLoaded', () => {
+    // Send the 'ready' signal to the extension to start the handshake
+    updateStatus('Webview loaded. Sending "ready" to extension.');
+    vscode.postMessage({ command: 'ready' });
+});
+
+async function renderChart() {
+    if (!currentTableData) {
+        return;
+    }
+
+    if (chart) {
+        chart.destroy();
+    }
+
+    const { Chart } = await import('chart.js/auto');
+
+    const chartType = (chartTypeDropdown as any).value;
+    const xAxis = (xAxisDropdown as any).value;
+    const yAxis = (yAxisDropdown as any).value;
+
+    if (!xAxis || !yAxis) {
+        return;
+    }
+
+    const labels = currentTableData!.rows.map(row => row.raw[currentTableData!.columns.indexOf(xAxis)]);
+    const data = currentTableData!.rows.map(row => row.raw[currentTableData!.columns.indexOf(yAxis)]);
+
+    chart = new Chart(chartCanvas, {
+        type: chartType,
+        data: {
+            labels: labels,
+            datasets: [{
+                label: yAxis,
+                data: data,
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}

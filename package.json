@@ -55,6 +55,8 @@
     "test": "vscode-test"
   },
   "devDependencies": {
+    "@types/chart.js": "^2.9.41",
+    "@types/emscripten": "^1.41.5",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/vscode": "^1.106.0",
@@ -70,6 +72,7 @@
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.30.0",
-    "@vscode/webview-ui-toolkit": "^1.4.0"
+    "@vscode/webview-ui-toolkit": "^1.4.0",
+    "chart.js": "^4.4.1"
   }
 }
