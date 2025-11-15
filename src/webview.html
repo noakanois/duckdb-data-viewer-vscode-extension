@@ -7,75 +7,161 @@
         style-src {{csp_source}} 'unsafe-inline';
         script-src 'nonce-{{nonce}}' 'unsafe-eval';
         worker-src blob:;
-        connect-src 
-            {{csp_source}} 
-            https://file+.vscode-resource.vscode-cdn.net 
-            blob: 
+        connect-src
+            {{csp_source}}
+            https://file+.vscode-resource.vscode-cdn.net
+            blob:
             https:;
     ">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DuckDB Viewer</title>
+  <title>🚀 DuckDB Data Viewer - RADICAL EDITION</title>
   <script type="module" nonce="{{nonce}}" src="{{toolkit_uri}}"></script>
   <style>
     :root {
-      --panel-bg: var(--vscode-editorWidget-background);
-      --panel-border: var(--vscode-editorWidget-border);
-      --muted: var(--vscode-descriptionForeground);
-      --accent: var(--vscode-button-background);
+      --accent-cyan: #00d4ff;
+      --accent-purple: #b026ff;
+      --accent-magenta: #ff00ff;
+      --accent-lime: #00ff64;
+      --dark-bg: #0a0e27;
+      --dark-surface: #141829;
+      --dark-surface-2: #1a1f38;
+      --glassmorphism: rgba(20, 24, 41, 0.7);
       --column-header-height: 44px;
     }
+
     * {
       box-sizing: border-box;
     }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
       margin: 0;
-      padding: 20px;
-      background-color: var(--vscode-editor-background);
-      color: var(--vscode-editor-foreground);
-      height: 100vh;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--dark-bg) 0%, #0f1633 100%);
+      color: #e0e0e0;
+      min-height: 100vh;
       display: flex;
+      backdrop-filter: blur(10px);
+      overflow-x: hidden;
     }
+
     .app-shell {
       display: flex;
       flex-direction: column;
       gap: 16px;
       width: 100%;
+      max-width: 1600px;
+      margin: 0 auto;
     }
+
+    /* ===== GLASSMORPHISM PANELS ===== */
+    .glass-panel {
+      background: var(--glassmorphism);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: 16px;
+      padding: 20px;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .glass-panel:hover {
+      border-color: rgba(0, 212, 255, 0.5);
+      box-shadow: 0 12px 48px rgba(0, 212, 255, 0.1);
+    }
+
+    /* ===== STATUS BAR ===== */
     #status-wrapper {
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 10px;
-      padding: 16px 20px;
       display: flex;
       align-items: center;
       gap: 12px;
+      padding: 16px 20px;
+      border-radius: 12px;
+      background: linear-gradient(90deg, rgba(0, 212, 255, 0.1) 0%, rgba(176, 38, 255, 0.1) 100%);
+      border: 1px solid rgba(0, 212, 255, 0.3);
       min-height: 56px;
+      animation: pulse-glow 2s ease-in-out infinite;
     }
+
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.1); }
+      50% { box-shadow: 0 0 40px rgba(0, 212, 255, 0.2); }
+    }
+
     #status {
       font-weight: 500;
       flex: 1;
+      letter-spacing: 0.5px;
     }
+
     #status.error {
-      color: var(--vscode-errorForeground);
+      color: #ff6b6b;
+      text-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
     }
+
+    /* ===== MAIN LAYOUT ===== */
     main {
       flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    @media (max-width: 1200px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ===== TABS ===== */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+      overflow-x: auto;
+    }
+
+    .tab-button {
+      padding: 8px 16px;
+      background: transparent;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .tab-button.active {
+      color: var(--accent-cyan);
+      border-bottom-color: var(--accent-cyan);
+      text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+    }
+
+    .tab-button:hover:not(.active) {
+      color: var(--accent-cyan);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* ===== RESULTS PANEL ===== */
+    #results-panel {
       display: flex;
       flex-direction: column;
       gap: 16px;
       min-height: 0;
     }
-    .panel {
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 12px;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      min-height: 0;
-    }
+
     .panel-heading {
       display: flex;
       justify-content: space-between;
@@ -83,81 +169,104 @@
       gap: 16px;
       flex-wrap: wrap;
     }
+
     .panel-heading h2 {
       margin: 0;
-      font-size: 16px;
-      font-weight: 600;
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-magenta));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 0.5px;
     }
+
     .panel-heading p {
-      margin: 2px 0 0 0;
+      margin: 0;
       font-size: 12px;
-      color: var(--muted);
+      color: #888;
     }
+
     #global-search {
       flex: 1;
-      min-width: 220px;
+      min-width: 200px;
+      padding: 10px 16px;
       border-radius: 8px;
-      border: 1px solid var(--panel-border);
-      background: var(--vscode-editor-background);
-      color: inherit;
-      padding: 8px 12px;
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      background: rgba(0, 0, 0, 0.3);
+      color: var(--accent-cyan);
+      font-size: 13px;
+      transition: all 0.2s ease;
     }
-    #results-panel {
-      flex: 1;
+
+    #global-search:focus {
+      outline: none;
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
     }
+
+    #global-search::placeholder {
+      color: #555;
+    }
+
+    /* ===== RESULTS TABLE ===== */
     #results-container {
       display: none;
       flex: 1;
-      border-radius: 10px;
-      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      border: 1px solid rgba(0, 212, 255, 0.2);
       overflow: auto;
-      background: var(--vscode-editor-background);
-      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+      background: rgba(10, 14, 39, 0.6);
+      backdrop-filter: blur(10px);
     }
+
     table {
       width: 100%;
       border-collapse: separate;
       border-spacing: 0;
       font-size: 13px;
     }
+
     thead th {
-      background: var(--panel-bg);
+      background: rgba(0, 212, 255, 0.1);
       text-align: left;
       font-weight: 600;
-      border-bottom: 1px solid var(--panel-border);
+      border-bottom: 1px solid rgba(0, 212, 255, 0.2);
       padding: 0;
+      color: var(--accent-cyan);
     }
+
     thead .column-row th {
       position: sticky;
       top: 0;
       z-index: 2;
     }
+
     thead .filter-row th {
       position: sticky;
       top: var(--column-header-height);
       z-index: 1;
-      background: var(--panel-bg);
+      background: rgba(10, 14, 39, 0.8);
     }
+
     th, td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--panel-border);
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(0, 212, 255, 0.1);
     }
+
     tbody tr:nth-child(even) {
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(0, 212, 255, 0.02);
     }
+
     tbody tr:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: rgba(0, 212, 255, 0.08);
     }
-    .empty-row {
-      text-align: center;
-      font-style: italic;
-      color: var(--muted);
-    }
+
     .header-button {
       width: 100%;
       background: none;
       border: none;
-      color: inherit;
+      color: var(--accent-cyan);
       font: inherit;
       display: flex;
       align-items: center;
@@ -165,130 +274,410 @@
       gap: 12px;
       padding: 10px 12px;
       cursor: pointer;
+      transition: all 0.2s ease;
     }
+
+    .header-button:hover {
+      text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+    }
+
     .header-button .sort-indicator {
       font-size: 10px;
-      color: var(--muted);
+      color: var(--accent-magenta);
       width: 10px;
       text-align: right;
     }
+
     .header-button[data-sort="asc"] .sort-indicator::after {
       content: "▲";
     }
+
     .header-button[data-sort="desc"] .sort-indicator::after {
       content: "▼";
     }
+
     .filter-row input {
       width: 100%;
-      border: none;
-      border-top: 1px solid var(--panel-border);
+      border: 1px solid rgba(0, 212, 255, 0.2);
       padding: 8px 10px;
-      background: rgba(255, 255, 255, 0.02);
-      color: inherit;
+      background: rgba(0, 0, 0, 0.3);
+      color: #e0e0e0;
       font-size: 12px;
+      border-radius: 4px;
     }
+
     .filter-row input:focus {
-      outline: 1px solid var(--accent);
+      outline: none;
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
     }
+
     .empty-state {
-      padding: 60px 0;
+      padding: 80px 40px;
       text-align: center;
-      color: var(--muted);
+      color: #666;
       font-size: 14px;
     }
+
     #row-count {
       font-size: 12px;
-      color: var(--muted);
-      margin-top: 2px;
+      color: var(--accent-magenta);
+      margin-top: 4px;
+      text-shadow: 0 0 10px rgba(176, 38, 255, 0.3);
     }
+
+    /* ===== SIDEBAR PANELS ===== */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ===== INSIGHTS PANEL ===== */
+    #insights-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .insight-card {
+      background: rgba(0, 0, 0, 0.2);
+      border-left: 3px solid var(--accent-cyan);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+      animation: slideInRight 0.3s ease;
+    }
+
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .insight-card.warning {
+      border-left-color: var(--accent-magenta);
+    }
+
+    .insight-card.critical {
+      border-left-color: #ff6b6b;
+    }
+
+    .insight-title {
+      font-weight: 600;
+      color: var(--accent-cyan);
+      margin-bottom: 4px;
+    }
+
+    .insight-desc {
+      color: #aaa;
+      line-height: 1.4;
+    }
+
+    /* ===== NL SUGGESTIONS ===== */
+    #nl-input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      background: rgba(0, 0, 0, 0.3);
+      color: #e0e0e0;
+      font-size: 13px;
+      transition: all 0.2s ease;
+    }
+
+    #nl-input:focus {
+      outline: none;
+      border-color: var(--accent-lime);
+      box-shadow: 0 0 20px rgba(0, 255, 100, 0.3);
+    }
+
+    .suggestion-item {
+      background: rgba(0, 255, 100, 0.05);
+      border: 1px solid rgba(0, 255, 100, 0.2);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .suggestion-item:hover {
+      background: rgba(0, 255, 100, 0.15);
+      border-color: var(--accent-lime);
+      transform: translateX(4px);
+    }
+
+    .suggestion-sql {
+      color: var(--accent-lime);
+      font-family: monospace;
+      font-size: 11px;
+      word-break: break-all;
+    }
+
+    .suggestion-desc {
+      color: #888;
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    /* ===== SQL PANEL ===== */
     #controls {
       display: none;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
     }
+
     #sql-input {
       width: 100%;
-      min-height: 160px;
-      padding: 14px 16px;
+      min-height: 200px;
+      padding: 16px;
       border-radius: 10px;
-      border: 1px solid var(--panel-border);
-      background-color: var(--vscode-editor-background);
-      color: inherit;
-      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      background: rgba(0, 0, 0, 0.4);
+      color: var(--accent-cyan);
+      font-family: 'Courier New', monospace;
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.6;
       resize: vertical;
-      box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+      transition: all 0.2s ease;
     }
+
+    #sql-input:focus {
+      outline: none;
+      border-color: var(--accent-magenta);
+      box-shadow: 0 0 20px rgba(176, 38, 255, 0.2);
+    }
+
     .sql-actions {
       display: flex;
       gap: 8px;
-      align-items: center;
       flex-wrap: wrap;
     }
+
     button {
+      padding: 10px 18px;
       border-radius: 8px;
       border: 1px solid transparent;
       font-size: 13px;
-      padding: 8px 14px;
+      font-weight: 600;
       cursor: pointer;
+      transition: all 0.2s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     #run-query {
-      background-color: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-      border-color: var(--vscode-button-border, transparent);
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-magenta));
+      color: white;
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
     }
-    #run-query:disabled {
-      opacity: 0.6;
-      cursor: default;
+
+    #run-query:hover:not(:disabled) {
+      box-shadow: 0 0 40px rgba(0, 212, 255, 0.4);
     }
+
     #copy-sql {
       background: transparent;
-      color: inherit;
-      border: 1px solid var(--panel-border);
+      color: var(--accent-cyan);
+      border: 1px solid var(--accent-cyan);
     }
+
+    #copy-sql:hover {
+      background: rgba(0, 212, 255, 0.1);
+    }
+
+    .export-button {
+      background: transparent;
+      color: var(--accent-lime);
+      border: 1px solid var(--accent-lime);
+    }
+
+    .export-button:hover {
+      background: rgba(0, 255, 100, 0.1);
+    }
+
+    .viz-button {
+      background: transparent;
+      color: var(--accent-magenta);
+      border: 1px solid var(--accent-magenta);
+    }
+
+    .viz-button:hover {
+      background: rgba(176, 38, 255, 0.1);
+    }
+
     .sql-hints {
-      font-size: 12px;
-      color: var(--muted);
+      font-size: 11px;
+      color: #666;
+      font-style: italic;
     }
-    .sql-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
+
+    /* ===== 3D VIZ ===== */
+    #viz-canvas {
+      width: 100%;
+      height: 300px;
+      border-radius: 8px;
+      display: block;
+    }
+
+    /* ===== VISUAL QUERY BUILDER ===== */
+    .query-builder-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .query-section {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 12px;
+      border-left: 3px solid var(--accent-cyan);
+    }
+
+    .query-section.active {
+      border-left-color: var(--accent-lime);
+      background: rgba(0, 255, 100, 0.08);
+    }
+
+    .query-section-title {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--accent-cyan);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .query-section-content {
+      font-size: 11px;
+      color: #aaa;
+      line-height: 1.5;
+    }
+
+    /* ===== SCROLL STYLES ===== */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(0, 212, 255, 0.3);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 212, 255, 0.6);
     }
   </style>
 </head>
 <body>
   <div class="app-shell">
     <div id="status-wrapper">
-      <div id="status">Initializing…</div>
+      <div id="status">🚀 Initializing RADICAL UI...</div>
     </div>
 
     <main>
-      <section class="panel" id="results-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Data Preview</h2>
-            <div id="row-count">Awaiting data…</div>
-          </div>
-          <input type="search" id="global-search" placeholder="Search across all columns" />
+      <!-- LEFT SIDE: DATA PREVIEW & QUERY -->
+      <section id="main-section" style="display: flex; flex-direction: column; gap: 16px; min-height: 0;">
+        <!-- TABS -->
+        <div class="tabs">
+          <button class="tab-button active" data-tab="results">📊 Data Preview</button>
+          <button class="tab-button" data-tab="viz">🌌 3D Visualization</button>
+          <button class="tab-button" data-tab="builder">🎨 Visual Query Builder</button>
         </div>
-        <div id="results-container">
-          <div class="empty-state">Load a file to see the first rows.</div>
+
+        <!-- RESULTS TAB -->
+        <div class="tab-content active" data-tab="results" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+          <div class="panel-heading">
+            <div>
+              <h2>✨ Data Preview</h2>
+              <div id="row-count">Awaiting data…</div>
+            </div>
+            <input type="search" id="global-search" placeholder="🔍 Search all columns..." />
+          </div>
+          <div class="glass-panel" id="results-container" style="flex: 1; min-height: 0; padding: 0; overflow: hidden;">
+            <div class="empty-state">Load a file to see the first rows.</div>
+          </div>
+        </div>
+
+        <!-- VIZ TAB -->
+        <div class="tab-content" data-tab="viz" style="flex: 1; min-height: 0;">
+          <div class="panel-heading">
+            <h2>🌌 3D Data Space</h2>
+          </div>
+          <div class="glass-panel" style="flex: 1; display: flex; align-items: center; justify-content: center;">
+            <canvas id="viz-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- BUILDER TAB -->
+        <div class="tab-content" data-tab="builder" style="flex: 1; min-height: 0; overflow-y: auto;">
+          <div class="panel-heading">
+            <h2>🎨 Visual Query Builder</h2>
+          </div>
+          <div class="glass-panel" style="flex: 1;">
+            <div id="visual-builder" class="query-builder-grid"></div>
+          </div>
         </div>
       </section>
 
-      <section class="panel" id="controls">
-        <div class="panel-heading">
-          <h2>SQL Preview</h2>
-          <div class="sql-actions">
-            <button id="copy-sql">Copy SQL</button>
-            <button id="run-query">Run Query</button>
+      <!-- RIGHT SIDE: SIDEBAR -->
+      <section class="sidebar">
+        <!-- INSIGHTS -->
+        <div class="glass-panel">
+          <h3 style="margin: 0 0 12px 0; color: var(--accent-cyan);">🧠 Data Insights</h3>
+          <div id="insights-panel">
+            <div style="color: #666; font-size: 12px;">Analyzing your data...</div>
           </div>
         </div>
-        <div class="sql-grid">
-          <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
-          <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
+
+        <!-- NL SUGGESTIONS -->
+        <div class="glass-panel">
+          <h3 style="margin: 0 0 12px 0; color: var(--accent-lime);">💬 Natural Language Queries</h3>
+          <input type="text" id="nl-input" placeholder="e.g., 'show me the top 10...'">
+          <div id="nl-suggestions" style="margin-top: 8px;"></div>
+        </div>
+
+        <!-- EXPORT -->
+        <div class="glass-panel">
+          <h3 style="margin: 0 0 12px 0; color: var(--accent-magenta);">📤 Smart Export</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <button class="export-button" data-export="csv">📄 CSV</button>
+            <button class="export-button" data-export="json">📋 JSON</button>
+            <button class="export-button" data-export="html">🌐 HTML</button>
+            <button class="export-button" data-export="markdown">📝 Markdown</button>
+          </div>
+        </div>
+
+        <!-- SQL EDITOR -->
+        <div class="glass-panel">
+          <h3 style="margin: 0 0 12px 0; color: var(--accent-magenta);">⚡ SQL Query</h3>
+          <div id="controls" style="display: flex !important;">
+            <textarea id="sql-input" placeholder="Write your SQL query..."></textarea>
+            <div class="sql-actions" style="margin-top: 12px;">
+              <button id="run-query" style="flex: 1;">⚡ Execute</button>
+              <button id="copy-sql">📋 Copy</button>
+            </div>
+            <div class="sql-hints">Ctrl+Enter or Cmd+Enter to run</div>
+          </div>
         </div>
       </section>
     </main>

@@ -5,6 +5,11 @@ import { arrowLoader } from './loaders/arrowLoader';
 import { parquetLoader } from './loaders/parquetLoader';
 import { DataLoader } from './loaders/types';
 import { buildDefaultQuery } from './utils/sqlHelpers';
+import { DataInsightsAnalyzer } from './features/dataInsights';
+import { NLToSQLConverter } from './features/nlToSql';
+import { Visualization3D } from './features/visualization3D';
+import { VisualQueryBuilder } from './features/visualQueryBuilder';
+import { SmartExporter } from './features/smartExport';
 
 declare const acquireVsCodeApi: any;
 const vscode = acquireVsCodeApi();
@@ -19,6 +24,15 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+
+// NEW: Elements for advanced features
+const nlInput = document.getElementById('nl-input') as HTMLInputElement;
+const nlSuggestions = document.getElementById('nl-suggestions') as HTMLElement;
+const insightsPanel = document.getElementById('insights-panel') as HTMLElement;
+const vizCanvas = document.getElementById('viz-canvas') as HTMLCanvasElement;
+const visualBuilder = document.getElementById('visual-builder') as HTMLElement;
+const exportButtons = document.querySelectorAll<HTMLButtonElement>('[data-export]');
+const tabButtons = document.querySelectorAll<HTMLButtonElement>('.tab-button');
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -36,11 +50,14 @@ let db: duckdb.AsyncDuckDB | null = null;
 let connection: duckdb.AsyncDuckDBConnection | null = null;
 let duckdbInitializationPromise: Promise<void> | null = null;
 let currentTableData: TableData | null = null;
+let currentArrowTable: Table | null = null;
 let columnFilters: string[] = [];
 let globalFilter = '';
 let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex: -1, direction: null };
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
+let nlConverter: NLToSQLConverter | null = null;
+let queryBuilder: VisualQueryBuilder | null = null;
 const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
 
 // --- Event Listeners (Moved to top) ---
@@ -95,6 +112,96 @@ if (copySqlButton) {
       console.warn('[Webview] Clipboard copy failed', err);
     }
   });
+}
+
+// ===== NEW: Tab switching =====
+tabButtons.forEach(button => {
+  button.addEventListener('click', () => {
+    const tab = button.getAttribute('data-tab');
+    if (!tab) return;
+
+    // Remove active class from all buttons and contents
+    tabButtons.forEach(b => b.classList.remove('active'));
+    document.querySelectorAll<HTMLElement>('.tab-content').forEach(tc => tc.classList.remove('active'));
+
+    // Add active class to clicked button and corresponding content
+    button.classList.add('active');
+    const content = document.querySelector<HTMLElement>(`[data-tab="${tab}"]`);
+    if (content) {
+      content.classList.add('active');
+    }
+  });
+});
+
+// ===== NEW: Natural Language Suggestions =====
+if (nlInput) {
+  nlInput.addEventListener('input', (e) => {
+    const input = (e.target as HTMLInputElement).value.trim();
+    if (!input || !nlConverter) {
+      nlSuggestions.innerHTML = '';
+      return;
+    }
+
+    const suggestions = nlConverter.generateSuggestions(input);
+    nlSuggestions.innerHTML = suggestions.map((suggestion, idx) => `
+      <div class="suggestion-item" data-index="${idx}" style="cursor: pointer;">
+        <div class="suggestion-sql">${escapeHtml(suggestion.sql)}</div>
+        <div class="suggestion-desc">${escapeHtml(suggestion.explanation)}</div>
+      </div>
+    `).join('');
+
+    // Add click handlers to suggestions
+    document.querySelectorAll<HTMLElement>('.suggestion-item').forEach((el, idx) => {
+      el.addEventListener('click', () => {
+        if (sqlInput) {
+          sqlInput.value = suggestions[idx].sql;
+          runQuery(suggestions[idx].sql).catch(reportError);
+        }
+      });
+    });
+  });
+}
+
+// ===== NEW: Export buttons =====
+exportButtons.forEach(button => {
+  button.addEventListener('click', async () => {
+    if (!currentArrowTable) {
+      updateStatus('No data to export');
+      return;
+    }
+
+    const format = button.getAttribute('data-export') as any;
+    try {
+      const { data, mimeType } = SmartExporter.export(currentArrowTable, format, 'data');
+      downloadFile(data, `data.${format}`, mimeType);
+      updateStatus(`✅ Exported to ${format.toUpperCase()}`);
+    } catch (err) {
+      reportError(err);
+    }
+  });
+});
+
+function downloadFile(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(text: string): string {
+  const map: {[key: string]: string} = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, m => map[m]);
 }
 
 // --- Core Functions ---
@@ -256,6 +363,7 @@ function renderResults(table: Table | null) {
   if (!table || table.numRows === 0) {
     resultsContainer.innerHTML = '<div class="empty-state">Query completed. No rows returned.</div>';
     currentTableData = null;
+    currentArrowTable = null;
     tableBodyElement = null;
     updateRowCount(0, 0);
     return;
@@ -279,6 +387,7 @@ function renderResults(table: Table | null) {
   }
 
   currentTableData = { columns, rows };
+  currentArrowTable = table;
   columnFilters = columns.map(() => '');
   globalFilter = '';
   sortState = { columnIndex: -1, direction: null };
@@ -291,6 +400,55 @@ function renderResults(table: Table | null) {
 
   resultsContainer.style.display = 'block';
   resultsContainer.scrollTop = 0;
+
+  // ===== NEW: Generate insights =====
+  generateInsights(table);
+
+  // ===== NEW: Initialize NL converter =====
+  nlConverter = new NLToSQLConverter(columns, 'data');
+
+  // ===== NEW: Initialize query builder =====
+  queryBuilder = new VisualQueryBuilder(columns, 'data');
+  if (visualBuilder) {
+    visualBuilder.innerHTML = '';
+    visualBuilder.appendChild(queryBuilder.renderUI());
+  }
+
+  // ===== NEW: Generate 3D visualization =====
+  if (vizCanvas) {
+    const viz3D = new Visualization3D(vizCanvas);
+    const canvas = viz3D.createVisualization(rows, columns, { maxParticles: 500 });
+    const vizTab = document.querySelector<HTMLElement>('[data-tab="viz"]');
+    if (vizTab) {
+      const container = vizTab.querySelector('.glass-panel');
+      if (container) {
+        container.innerHTML = '';
+        container.appendChild(canvas);
+      }
+    }
+  }
+}
+
+// ===== NEW: Generate and display insights =====
+function generateInsights(table: Table) {
+  if (!insightsPanel) return;
+
+  const insights = DataInsightsAnalyzer.analyzeTable(table);
+
+  if (insights.length === 0) {
+    insightsPanel.innerHTML = '<div style="color: #666; font-size: 12px;">No significant insights detected. Data looks clean!</div>';
+    return;
+  }
+
+  insightsPanel.innerHTML = insights.map(insight => {
+    const severityClass = insight.severity === 'warning' ? 'warning' : insight.severity === 'critical' ? 'critical' : '';
+    return `
+      <div class="insight-card ${severityClass}">
+        <div class="insight-title">${insight.title}</div>
+        <div class="insight-desc">${insight.description}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function buildTableSkeleton(columns: string[]) {
