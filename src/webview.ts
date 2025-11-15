@@ -16,6 +16,7 @@ const resultsContainer = document.getElementById('results-container');
 const sqlInput = document.getElementById('sql-input') as HTMLTextAreaElement;
 const runButton = document.getElementById('run-query') as HTMLButtonElement;
 const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
+const autoJoinButton = document.getElementById('auto-join') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
@@ -54,7 +55,53 @@ window.addEventListener('message', (event: any) => {
     handleFileLoad(message.fileName, message.fileData).catch(reportError);
   } else if (message.command === 'error') {
     reportError(message.message);
+  } else if (message.command === 'workspace-files') {
+    autoJoin(message.files).catch(reportError);
+  } else if (message.command === 'file-content') {
+    handleAutoJoinFile(message.fileName, message.fileData).catch(reportError);
   }
+});
+
+async function handleAutoJoinFile(fileName: string, fileData: any) {
+    if (!connection || !currentTableData) {
+        return;
+    }
+
+    const fileBytes = extractFileBytes(fileData);
+    const loader = selectLoader(fileName);
+    const loadResult = await loader.load(fileName, fileBytes, {
+        db: db!,
+        connection: connection!,
+        updateStatus,
+    });
+
+    const newColumns = loadResult.columns;
+    const commonColumn = currentTableData.columns.find(c => newColumns.includes(c));
+
+    if (commonColumn) {
+        const currentTable = sqlInput.value.match(/FROM\s+"?([^"\s]+)/i)?.[1]!;
+        const newQuery = `SELECT * FROM "${currentTable}" JOIN "${loadResult.relationIdentifier}" ON "${currentTable}"."${commonColumn}" = "${loadResult.relationIdentifier}"."${commonColumn}"`;
+        sqlInput.value = newQuery;
+    }
+}
+
+async function autoJoin(files: {path: string}[]) {
+    if (!connection || !currentTableData) {
+        return;
+    }
+
+    for (const file of files) {
+        const fileName = file.path.split('/').pop()!;
+        if (fileName === (sqlInput.value.match(/FROM\s+"?([^"\s]+)/i)?.[1])) {
+            continue;
+        }
+
+        vscode.postMessage({ command: 'get-file-content', path: file.path });
+    }
+}
+
+autoJoinButton.addEventListener('click', () => {
+    vscode.postMessage({ command: 'get-workspace-files' });
 });
 
 // Listen for the "Run" button click
@@ -191,6 +238,7 @@ async function handleFileLoad(fileName: string, fileData: any) {
   const defaultQuery = buildDefaultQuery(loadResult.columns, loadResult.relationIdentifier);
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
+  autoJoinButton.disabled = false;
 
   if (controls) controls.style.display = 'flex';
   if (resultsContainer) resultsContainer.style.display = 'block';
