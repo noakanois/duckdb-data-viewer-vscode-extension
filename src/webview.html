@@ -18,11 +18,12 @@
   <script type="module" nonce="{{nonce}}" src="{{toolkit_uri}}"></script>
   <style>
     :root {
-      --panel-bg: var(--vscode-editorWidget-background);
+      --panel-bg: color-mix(in srgb, var(--vscode-editorWidget-background) 70%, transparent);
       --panel-border: var(--vscode-editorWidget-border);
       --muted: var(--vscode-descriptionForeground);
       --accent: var(--vscode-button-background);
       --column-header-height: 44px;
+      --glow: hsla(220, 90%, 65%, 0.4);
     }
     * {
       box-sizing: border-box;
@@ -30,27 +31,122 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0;
-      padding: 20px;
-      background-color: var(--vscode-editor-background);
+      background: radial-gradient(circle at top left, rgba(74, 222, 255, 0.12), transparent 55%),
+        radial-gradient(circle at bottom right, rgba(255, 92, 246, 0.1), transparent 60%),
+        var(--vscode-editor-background);
       color: var(--vscode-editor-foreground);
-      height: 100vh;
-      display: flex;
+      min-height: 100vh;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(47, 73, 255, 0.12), transparent 35%, rgba(255, 86, 164, 0.1)),
+        radial-gradient(circle at 20% 80%, rgba(89, 213, 255, 0.12), transparent 40%),
+        radial-gradient(circle at 75% 15%, rgba(255, 166, 97, 0.1), transparent 45%);
+      filter: blur(60px);
+      opacity: 0.8;
+      z-index: 0;
+      pointer-events: none;
+      animation: aurora-shift 18s linear infinite;
+    }
+    @keyframes aurora-shift {
+      0% { transform: translate3d(-4%, -2%, 0) scale(1.02); }
+      50% { transform: translate3d(3%, 3%, 0) scale(1.08); }
+      100% { transform: translate3d(-4%, -2%, 0) scale(1.02); }
     }
     .app-shell {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      width: 100%;
+      padding: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .galaxy-header {
+      padding: 20px 24px;
+      border-radius: 18px;
+      border: 1px solid color-mix(in srgb, var(--panel-border) 50%, transparent);
+      background: linear-gradient(145deg, rgba(23, 25, 37, 0.85), rgba(13, 15, 25, 0.92));
+      box-shadow: 0 20px 60px rgba(12, 12, 35, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
       display: flex;
       flex-direction: column;
       gap: 16px;
-      width: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+    .galaxy-header::after {
+      content: '';
+      position: absolute;
+      inset: -60%;
+      background: conic-gradient(from 120deg at 50% 50%, rgba(59, 130, 246, 0.15), rgba(236, 72, 153, 0.25), rgba(45, 212, 191, 0.2), rgba(59, 130, 246, 0.15));
+      filter: blur(120px);
+      opacity: 0.8;
+      animation: constellation-spin 36s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes constellation-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .galaxy-header h1 {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+    .galaxy-header p {
+      margin: 6px 0 0 0;
+      color: color-mix(in srgb, var(--muted) 70%, rgba(162, 233, 255, 0.9));
+      font-size: 14px;
+      max-width: 640px;
+      line-height: 1.5;
+    }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .badge {
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(42, 61, 144, 0.35);
+      border: 1px solid rgba(83, 163, 255, 0.4);
+      color: rgba(202, 229, 255, 0.92);
+      font-size: 12px;
+      letter-spacing: 0.2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+    .badge::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+      transform: translateX(-100%);
+      animation: shimmer 4s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      50% { transform: translateX(100%); }
+      100% { transform: translateX(100%); }
     }
     #status-wrapper {
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 10px;
-      padding: 16px 20px;
+      background: linear-gradient(135deg, rgba(13, 17, 31, 0.88), rgba(10, 13, 22, 0.92));
+      border: 1px solid color-mix(in srgb, var(--panel-border) 40%, transparent);
+      border-radius: 14px;
+      padding: 16px 22px;
       display: flex;
       align-items: center;
       gap: 12px;
       min-height: 56px;
+      box-shadow: 0 18px 40px rgba(10, 10, 22, 0.45);
     }
     #status {
       font-weight: 500;
@@ -59,60 +155,93 @@
     #status.error {
       color: var(--vscode-errorForeground);
     }
-    main {
+    main.layout {
       flex: 1;
+      display: grid;
+      gap: 18px;
+      min-height: 0;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+      align-items: start;
+    }
+    @media (max-width: 1200px) {
+      main.layout {
+        grid-template-columns: 1fr;
+      }
+    }
+    .panel {
+      background: linear-gradient(160deg, rgba(18, 21, 36, 0.92), rgba(9, 11, 20, 0.95));
+      border: 1px solid color-mix(in srgb, var(--panel-border) 60%, transparent);
+      border-radius: 16px;
+      padding: 18px 22px;
       display: flex;
       flex-direction: column;
       gap: 16px;
       min-height: 0;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 15px 45px rgba(7, 9, 19, 0.5);
     }
-    .panel {
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 12px;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      min-height: 0;
+    .panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 20% 15%, rgba(88, 207, 255, 0.12), transparent 55%),
+        radial-gradient(circle at 80% 80%, rgba(255, 145, 164, 0.08), transparent 45%);
+      opacity: 0.9;
+      pointer-events: none;
+    }
+    .panel > * {
+      position: relative;
+      z-index: 1;
     }
     .panel-heading {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       gap: 16px;
       flex-wrap: wrap;
     }
     .panel-heading h2 {
       margin: 0;
-      font-size: 16px;
+      font-size: 17px;
       font-weight: 600;
+      letter-spacing: 0.3px;
     }
     .panel-heading p {
-      margin: 2px 0 0 0;
+      margin: 4px 0 0 0;
       font-size: 12px;
       color: var(--muted);
     }
     #global-search {
       flex: 1;
       min-width: 220px;
-      border-radius: 8px;
-      border: 1px solid var(--panel-border);
-      background: var(--vscode-editor-background);
+      border-radius: 10px;
+      border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
+      background: rgba(0, 0, 0, 0.25);
       color: inherit;
-      padding: 8px 12px;
+      padding: 10px 14px;
+      box-shadow: inset 0 0 0 1px rgba(82, 148, 255, 0.18);
+      transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+    #global-search:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(99, 234, 255, 0.35);
+      transform: translateY(-1px);
     }
     #results-panel {
-      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
     }
     #results-container {
       display: none;
       flex: 1;
-      border-radius: 10px;
-      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      border: 1px solid color-mix(in srgb, var(--panel-border) 60%, transparent);
       overflow: auto;
-      background: var(--vscode-editor-background);
-      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+      background: rgba(5, 8, 18, 0.92);
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
     }
     table {
       width: 100%;
@@ -121,10 +250,10 @@
       font-size: 13px;
     }
     thead th {
-      background: var(--panel-bg);
+      background: rgba(15, 20, 32, 0.98);
       text-align: left;
       font-weight: 600;
-      border-bottom: 1px solid var(--panel-border);
+      border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
       padding: 0;
     }
     thead .column-row th {
@@ -136,17 +265,18 @@
       position: sticky;
       top: var(--column-header-height);
       z-index: 1;
-      background: var(--panel-bg);
+      background: rgba(11, 16, 28, 0.98);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     }
     th, td {
       padding: 10px 12px;
-      border-bottom: 1px solid var(--panel-border);
+      border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 70%, transparent);
     }
     tbody tr:nth-child(even) {
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(47, 60, 109, 0.08);
     }
     tbody tr:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: rgba(107, 182, 255, 0.12);
     }
     .empty-row {
       text-align: center;
@@ -165,6 +295,10 @@
       gap: 12px;
       padding: 10px 12px;
       cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .header-button:hover {
+      background: rgba(106, 180, 255, 0.12);
     }
     .header-button .sort-indicator {
       font-size: 10px;
@@ -181,14 +315,15 @@
     .filter-row input {
       width: 100%;
       border: none;
-      border-top: 1px solid var(--panel-border);
+      border-top: 1px solid color-mix(in srgb, var(--panel-border) 60%, transparent);
       padding: 8px 10px;
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(17, 21, 35, 0.9);
       color: inherit;
       font-size: 12px;
     }
     .filter-row input:focus {
       outline: 1px solid var(--accent);
+      background: rgba(30, 44, 83, 0.8);
     }
     .empty-state {
       padding: 60px 0;
@@ -198,73 +333,245 @@
     }
     #row-count {
       font-size: 12px;
-      color: var(--muted);
-      margin-top: 2px;
+      color: color-mix(in srgb, var(--muted) 85%, rgba(193, 233, 255, 0.9));
+      margin-top: 4px;
+      letter-spacing: 0.2px;
+    }
+    .insights-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      transition: opacity 0.2s ease;
+    }
+    .insight-card {
+      padding: 16px;
+      border-radius: 12px;
+      background: rgba(14, 19, 33, 0.9);
+      border: 1px solid rgba(99, 204, 255, 0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: inset 0 0 20px rgba(34, 112, 255, 0.12);
+    }
+    .insight-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: rgba(141, 207, 255, 0.85);
+    }
+    .insight-value {
+      font-size: 20px;
+      font-weight: 600;
+      color: rgba(228, 245, 255, 0.95);
+    }
+    .insight-meta {
+      font-size: 11px;
+      color: rgba(173, 204, 255, 0.75);
+    }
+    .visualization-panel {
+      border-radius: 14px;
+      border: 1px solid rgba(73, 158, 255, 0.2);
+      background: linear-gradient(160deg, rgba(14, 22, 41, 0.92), rgba(9, 14, 26, 0.95));
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 18px;
+      align-items: center;
+    }
+    @media (max-width: 820px) {
+      .visualization-panel {
+        grid-template-columns: 1fr;
+      }
+    }
+    #orbit-visualizer {
+      width: 100%;
+      height: 220px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(17, 36, 72, 0.85), rgba(8, 12, 24, 0.95));
+      box-shadow: inset 0 0 50px rgba(40, 104, 255, 0.24), 0 0 20px rgba(90, 190, 255, 0.18);
+    }
+    .visualization-meta h3 {
+      margin: 0;
+      font-size: 16px;
+      color: rgba(214, 238, 255, 0.95);
+    }
+    .visualization-meta p {
+      margin: 6px 0 0 0;
+      font-size: 12px;
+      color: rgba(167, 199, 255, 0.8);
+      line-height: 1.5;
+    }
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
     }
     #controls {
       display: none;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
     }
     #sql-input {
       width: 100%;
-      min-height: 160px;
-      padding: 14px 16px;
-      border-radius: 10px;
-      border: 1px solid var(--panel-border);
-      background-color: var(--vscode-editor-background);
+      min-height: 180px;
+      padding: 16px 18px;
+      border-radius: 12px;
+      border: 1px solid rgba(68, 142, 255, 0.24);
+      background-color: rgba(3, 8, 18, 0.92);
       color: inherit;
       font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.6;
       resize: vertical;
-      box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+      box-shadow: inset 0 0 0 1px rgba(75, 139, 255, 0.2);
+      transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+    #sql-input:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(107, 217, 255, 0.35);
+      transform: translateY(-1px);
     }
     .sql-actions {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       align-items: center;
       flex-wrap: wrap;
     }
     button {
-      border-radius: 8px;
+      border-radius: 10px;
       border: 1px solid transparent;
       font-size: 13px;
-      padding: 8px 14px;
+      padding: 9px 16px;
       cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    button:active {
+      transform: translateY(1px);
     }
     #run-query {
-      background-color: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-      border-color: var(--vscode-button-border, transparent);
+      background: linear-gradient(135deg, rgba(51, 199, 255, 0.9), rgba(151, 109, 255, 0.9));
+      color: rgba(8, 12, 24, 0.95);
+      border-color: rgba(120, 200, 255, 0.5);
+      box-shadow: 0 10px 25px rgba(98, 189, 255, 0.35);
+    }
+    #run-query:hover {
+      box-shadow: 0 12px 30px rgba(108, 209, 255, 0.5);
     }
     #run-query:disabled {
-      opacity: 0.6;
+      opacity: 0.7;
       cursor: default;
+      box-shadow: none;
     }
     #copy-sql {
-      background: transparent;
+      background: rgba(18, 25, 44, 0.85);
       color: inherit;
-      border: 1px solid var(--panel-border);
+      border: 1px solid rgba(84, 149, 255, 0.28);
+      box-shadow: 0 8px 20px rgba(28, 46, 92, 0.4);
+    }
+    #copy-sql:hover {
+      box-shadow: 0 8px 24px rgba(84, 149, 255, 0.35);
     }
     .sql-hints {
       font-size: 12px;
-      color: var(--muted);
+      color: rgba(167, 199, 255, 0.75);
+      line-height: 1.5;
     }
     .sql-grid {
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
+    #history-panel {
+      gap: 12px;
+    }
+    #history-empty {
+      font-size: 12px;
+      color: rgba(155, 186, 255, 0.6);
+      text-align: center;
+      padding: 16px;
+      border-radius: 10px;
+      border: 1px dashed rgba(97, 157, 255, 0.3);
+      background: rgba(12, 16, 32, 0.6);
+    }
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 320px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .history-item {
+      text-align: left;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      background: rgba(13, 20, 36, 0.92);
+      border: 1px solid rgba(75, 139, 255, 0.24);
+      border-radius: 12px;
+      color: inherit;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+    .history-item::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, transparent, rgba(103, 213, 255, 0.12));
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .history-item:hover::before {
+      opacity: 1;
+    }
+    .history-item:hover {
+      transform: translateY(-1px);
+    }
+    .history-sql {
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      color: rgba(209, 232, 255, 0.92);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 260px;
+    }
+    .history-meta {
+      display: flex;
+      gap: 10px;
+      font-size: 11px;
+      color: rgba(161, 196, 255, 0.7);
+    }
+    .history-time {
+      font-variant-numeric: tabular-nums;
+    }
+    .history-count {
+      color: rgba(110, 231, 183, 0.82);
+    }
   </style>
 </head>
 <body>
   <div class="app-shell">
+    <header class="galaxy-header">
+      <div>
+        <h1>DuckDB Stellar Lab</h1>
+        <p>Command the cosmos of data – craft SQL, see instant results, and let DuckDB paint constellations from every file you open.</p>
+      </div>
+      <div class="badge-row">
+        <span class="badge">✨ Instant preview engine</span>
+        <span class="badge">🪐 Powered by DuckDB</span>
+        <span class="badge">🌌 Experimental orbit visualizer</span>
+      </div>
+    </header>
+
     <div id="status-wrapper">
       <div id="status">Initializing…</div>
     </div>
 
-    <main>
+    <main class="layout">
       <section class="panel" id="results-panel">
         <div class="panel-heading">
           <div>
@@ -273,24 +580,51 @@
           </div>
           <input type="search" id="global-search" placeholder="Search across all columns" />
         </div>
+
+        <div class="insights-grid" id="insights-grid"></div>
+
+        <section class="visualization-panel">
+          <canvas id="orbit-visualizer" width="320" height="320" aria-hidden="true"></canvas>
+          <div class="visualization-meta">
+            <h3 id="viz-title">Awaiting signals</h3>
+            <p id="viz-subtitle">Run a query to generate a cosmic fingerprint of your data.</p>
+          </div>
+        </section>
+
         <div id="results-container">
           <div class="empty-state">Load a file to see the first rows.</div>
         </div>
       </section>
 
-      <section class="panel" id="controls">
-        <div class="panel-heading">
-          <h2>SQL Preview</h2>
-          <div class="sql-actions">
-            <button id="copy-sql">Copy SQL</button>
-            <button id="run-query">Run Query</button>
+      <aside class="side-panel">
+        <section class="panel" id="controls">
+          <div class="panel-heading">
+            <div>
+              <h2>SQL Command Deck</h2>
+              <p>Shape the universe of rows with custom queries.</p>
+            </div>
+            <div class="sql-actions">
+              <button id="copy-sql">Copy SQL</button>
+              <button id="run-query">Run Query</button>
+            </div>
           </div>
-        </div>
-        <div class="sql-grid">
-          <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
-          <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
-        </div>
-      </section>
+          <div class="sql-grid">
+            <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
+            <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run • Filters update in real time • Click any history item to replay it.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="history-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Query Memory</h2>
+              <p>Revisit recent ideas with a single click.</p>
+            </div>
+          </div>
+          <div id="history-empty">No queries yet. Craft one to begin your constellation.</div>
+          <div id="history-list" class="history-list" hidden></div>
+        </section>
+      </aside>
     </main>
   </div>
 

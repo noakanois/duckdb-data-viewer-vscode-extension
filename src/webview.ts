@@ -19,6 +19,12 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const insightsGrid = document.getElementById('insights-grid');
+const historyList = document.getElementById('history-list');
+const historyEmptyState = document.getElementById('history-empty');
+const vizCanvas = document.getElementById('orbit-visualizer') as HTMLCanvasElement | null;
+const vizTitle = document.getElementById('viz-title');
+const vizSubtitle = document.getElementById('viz-subtitle');
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -32,6 +38,15 @@ interface TableData {
   rows: TableRow[];
 }
 
+interface QueryHistoryEntry {
+  id: number;
+  sql: string;
+  normalizedSql: string;
+  timestamp: number;
+  durationMs: number;
+  rowCount: number;
+}
+
 let db: duckdb.AsyncDuckDB | null = null;
 let connection: duckdb.AsyncDuckDBConnection | null = null;
 let duckdbInitializationPromise: Promise<void> | null = null;
@@ -41,7 +56,12 @@ let globalFilter = '';
 let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex: -1, direction: null };
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
+let queryHistory: QueryHistoryEntry[] = [];
+let historySequence = 0;
 const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
+
+resizeOrbitCanvas();
+window.addEventListener('resize', resizeOrbitCanvas);
 
 // --- Event Listeners (Moved to top) ---
 
@@ -192,8 +212,12 @@ async function handleFileLoad(fileName: string, fileData: any) {
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
 
-  if (controls) controls.style.display = 'flex';
-  if (resultsContainer) resultsContainer.style.display = 'block';
+  if (controls) {
+    controls.style.display = 'flex';
+  }
+  if (resultsContainer) {
+    resultsContainer.style.display = 'block';
+  }
 
   await runQuery(defaultQuery);
 }
@@ -225,15 +249,24 @@ async function runQuery(sql: string) {
   if (!connection) {
     throw new Error("No database connection.");
   }
-  
+
+  const trimmedSql = sql.trim();
+  if (!trimmedSql) {
+    updateStatus('Enter a SQL query to explore the cosmos.');
+    return;
+  }
+
   // Show status bar for "Running query..."
   updateStatus('Running query...');
   runButton.disabled = true;
 
   try {
-    const result = await connection.query(sql);
-    renderResults(result);
-    
+    const start = performance.now();
+    const result = await connection.query(trimmedSql);
+    const totalRows = renderResults(result);
+    const durationMs = performance.now() - start;
+    recordQuery(trimmedSql, totalRows, durationMs);
+
     // --- CHANGE ---
     // Hide the status bar on success
     if (statusWrapper) {
@@ -248,9 +281,9 @@ async function runQuery(sql: string) {
   }
 }
 
-function renderResults(table: Table | null) {
+function renderResults(table: Table | null): number {
   if (!resultsContainer) {
-    return;
+    return 0;
   }
 
   if (!table || table.numRows === 0) {
@@ -258,7 +291,9 @@ function renderResults(table: Table | null) {
     currentTableData = null;
     tableBodyElement = null;
     updateRowCount(0, 0);
-    return;
+    updateInsights();
+    updateVisualization([]);
+    return 0;
   }
 
   const rows: TableRow[] = [];
@@ -266,7 +301,9 @@ function renderResults(table: Table | null) {
 
   for (let i = 0; i < table.numRows; i++) {
     const row = table.get(i);
-    if (!row) continue;
+    if (!row) {
+      continue;
+    }
 
     const raw: any[] = [];
     const display: string[] = [];
@@ -291,6 +328,8 @@ function renderResults(table: Table | null) {
 
   resultsContainer.style.display = 'block';
   resultsContainer.scrollTop = 0;
+  updateInsights();
+  return rows.length;
 }
 
 function buildTableSkeleton(columns: string[]) {
@@ -366,7 +405,9 @@ function applyTableState() {
       }
     }
     return normalizedFilters.every((filter, idx) => {
-      if (!filter) return true;
+      if (!filter) {
+        return true;
+      }
       return (row.display[idx] ?? '').toLowerCase().includes(filter);
     });
   });
@@ -411,6 +452,7 @@ function applyTableState() {
 
   updateRowCount(visibleRows.length, currentTableData.rows.length);
   refreshSortIndicators();
+  updateVisualization(visibleRows);
 }
 
 function syncColumnHeaderHeight(headerRow: HTMLTableRowElement) {
@@ -456,11 +498,15 @@ function updateRowCount(visible: number, total: number) {
   if (!rowCountLabel) {
     return;
   }
-  rowCountLabel.textContent = '';
+  const columnCount = currentTableData?.columns.length ?? 0;
+  const filterDescriptor = total === visible ? 'Full galaxy in view' : 'Filters engaged';
+  rowCountLabel.textContent = `${formatNumber(visible)} / ${formatNumber(total)} rows • ${formatNumber(columnCount)} columns • ${filterDescriptor}`;
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
-  if (a === b) return 0;
+  if (a === b) {
+    return 0;
+  }
 
   const aIsNumber = typeof a === 'number' && Number.isFinite(a);
   const bIsNumber = typeof b === 'number' && Number.isFinite(b);
@@ -530,7 +576,7 @@ function updateStatus(message: string) {
 }
 function reportError(e: any) {
   const message = e instanceof Error ? e.message : String(e);
-  
+
   // Always make the status bar visible for errors
   if (statusWrapper) {
     statusWrapper.style.display = 'block';
@@ -540,6 +586,384 @@ function reportError(e: any) {
     status.classList.add('error'); // Add a red error style
   }
   console.error(`[Error] ${message}`, e);
+}
+
+function recordQuery(sql: string, rowCount: number, durationMs: number) {
+  if (!historyList) {
+    return;
+  }
+  const normalizedSql = normalizeSql(sql);
+  if (!normalizedSql) {
+    return;
+  }
+
+  const entry: QueryHistoryEntry = {
+    id: ++historySequence,
+    sql,
+    normalizedSql,
+    timestamp: Date.now(),
+    durationMs,
+    rowCount,
+  };
+
+  if (queryHistory[0]?.normalizedSql === normalizedSql) {
+    queryHistory[0] = entry;
+  } else {
+    queryHistory = [entry, ...queryHistory.filter((existing) => existing.normalizedSql !== normalizedSql)];
+  }
+
+  if (queryHistory.length > 20) {
+    queryHistory = queryHistory.slice(0, 20);
+  }
+
+  renderQueryHistory();
+}
+
+function renderQueryHistory() {
+  if (!historyList || !historyEmptyState) {
+    return;
+  }
+
+  historyList.innerHTML = '';
+
+  if (queryHistory.length === 0) {
+    historyList.hidden = true;
+    historyEmptyState.hidden = false;
+    return;
+  }
+
+  historyList.hidden = false;
+  historyEmptyState.hidden = true;
+
+  queryHistory.forEach((entry) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'history-item';
+
+    const sqlSpan = document.createElement('span');
+    sqlSpan.className = 'history-sql';
+    sqlSpan.textContent = entry.normalizedSql;
+
+    const meta = document.createElement('div');
+    meta.className = 'history-meta';
+
+    const time = document.createElement('span');
+    time.className = 'history-time';
+    time.textContent = new Date(entry.timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    const count = document.createElement('span');
+    count.className = 'history-count';
+    count.textContent = `${formatNumber(entry.rowCount)} rows`;
+
+    const duration = document.createElement('span');
+    duration.textContent = formatDuration(entry.durationMs);
+
+    meta.append(time, count, duration);
+    button.append(sqlSpan, meta);
+    button.addEventListener('click', () => {
+      sqlInput.value = entry.sql;
+      runQuery(entry.sql).catch(reportError);
+    });
+
+    historyList.appendChild(button);
+  });
+}
+
+function updateInsights() {
+  if (!insightsGrid) {
+    return;
+  }
+
+  insightsGrid.innerHTML = '';
+
+  if (!currentTableData || currentTableData.rows.length === 0) {
+    return;
+  }
+
+  const totalRows = currentTableData.rows.length;
+  const totalColumns = currentTableData.columns.length;
+
+  let nullChampion: { column: string; ratio: number } = { column: '', ratio: 0 };
+  let diversityChampion: { column: string; uniqueCount: number } = { column: '', uniqueCount: 0 };
+  let numericChampion: { column: string; count: number; mean: number; min: number; max: number } = {
+    column: '',
+    count: 0,
+    mean: 0,
+    min: 0,
+    max: 0,
+  };
+
+  currentTableData.columns.forEach((column, index) => {
+    let nullCount = 0;
+    let sum = 0;
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    let numericCount = 0;
+    const uniqueSampler = new Set<string>();
+
+    currentTableData!.rows.forEach((row) => {
+      const value = row.raw[index];
+      if (value === null || value === undefined || value === '') {
+        nullCount += 1;
+        return;
+      }
+
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        numericCount += 1;
+        sum += value;
+        if (value < min) {
+          min = value;
+        }
+        if (value > max) {
+          max = value;
+        }
+        return;
+      }
+
+      if (uniqueSampler.size < 250) {
+        uniqueSampler.add(typeof value === 'string' ? value : JSON.stringify(value));
+      }
+    });
+
+    if (totalRows > 0) {
+      const ratio = nullCount / totalRows;
+      if (ratio > nullChampion.ratio) {
+        nullChampion = { column, ratio };
+      }
+    }
+
+    if (uniqueSampler.size > diversityChampion.uniqueCount) {
+      diversityChampion = { column, uniqueCount: uniqueSampler.size };
+    }
+
+    if (numericCount > numericChampion.count && numericCount > 0) {
+      numericChampion = {
+        column,
+        count: numericCount,
+        mean: sum / numericCount,
+        min,
+        max,
+      };
+    }
+  });
+
+  const cards: Array<{ label: string; value: string; meta: string }> = [
+    {
+      label: 'Row Horizon',
+      value: formatNumber(totalRows),
+      meta: `${formatNumber(totalColumns)} columns orbiting`,
+    },
+  ];
+
+  if (numericChampion.count > 0) {
+    cards.push({
+      label: 'Brightest Metric',
+      value: numericChampion.column,
+      meta: `${formatNumber(numericChampion.count)} numeric values • μ ${formatNumber(numericChampion.mean, 2)} • ${formatNumber(numericChampion.min, 2)} → ${formatNumber(numericChampion.max, 2)}`,
+    });
+  }
+
+  if (nullChampion.column) {
+    cards.push({
+      label: 'Null Nebula',
+      value: nullChampion.column,
+      meta: `${formatPercent(nullChampion.ratio)} of rows missing`,
+    });
+  }
+
+  if (diversityChampion.column) {
+    cards.push({
+      label: 'Diversity Signal',
+      value: diversityChampion.column,
+      meta: `${formatNumber(diversityChampion.uniqueCount)} unique samples captured`,
+    });
+  }
+
+  cards.slice(0, 4).forEach((card) => {
+    const container = document.createElement('div');
+    container.className = 'insight-card';
+
+    const label = document.createElement('div');
+    label.className = 'insight-label';
+    label.textContent = card.label;
+
+    const value = document.createElement('div');
+    value.className = 'insight-value';
+    value.textContent = card.value;
+
+    const meta = document.createElement('div');
+    meta.className = 'insight-meta';
+    meta.textContent = card.meta;
+
+    container.append(label, value, meta);
+    insightsGrid.appendChild(container);
+  });
+}
+
+function updateVisualization(rows: TableRow[]) {
+  if (!vizCanvas || !vizTitle || !vizSubtitle) {
+    return;
+  }
+
+  const ctx = vizCanvas.getContext('2d');
+  if (!ctx) {
+    return;
+  }
+
+  resizeOrbitCanvas();
+
+  const displayWidth = vizCanvas.clientWidth || 320;
+  const displayHeight = vizCanvas.clientHeight || 320;
+  const dpr = window.devicePixelRatio || 1;
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, displayWidth, displayHeight);
+
+  const centerX = displayWidth / 2;
+  const centerY = displayHeight / 2;
+  const radius = Math.min(centerX, centerY) - 12;
+
+  ctx.save();
+  ctx.translate(centerX, centerY);
+
+  ctx.strokeStyle = 'rgba(115, 194, 255, 0.25)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.65, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const sourceRows = rows.length > 0 ? rows : currentTableData?.rows ?? [];
+  const numericColumn = pickNumericColumn(sourceRows);
+
+  if (!numericColumn) {
+    ctx.restore();
+    vizTitle.textContent = 'Awaiting numeric signals';
+    vizSubtitle.textContent = 'Run a query with numeric columns to illuminate the orbit chart.';
+    return;
+  }
+
+  const { values, name } = numericColumn;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(max - min, 1);
+  const mean = values.reduce((acc, value) => acc + value, 0) / values.length;
+
+  const sampleSize = Math.min(values.length, 360);
+  const step = values.length / sampleSize;
+
+  for (let i = 0; i < sampleSize; i++) {
+    const rawValue = values[Math.floor(i * step)];
+    const normalized = (rawValue - min) / range;
+    const angle = (i / sampleSize) * Math.PI * 2;
+    const magnitude = radius * (0.25 + normalized * 0.7);
+    const x = Math.cos(angle) * magnitude;
+    const y = Math.sin(angle) * magnitude;
+
+    ctx.strokeStyle = `hsla(${200 + normalized * 120}, 95%, ${65 + normalized * 20}%, 0.85)`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+
+    ctx.fillStyle = `hsla(${190 + normalized * 120}, 100%, 72%, 0.95)`;
+    ctx.beginPath();
+    ctx.arc(x, y, 2.8 + normalized * 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  vizTitle.textContent = `Orbiting ${name}`;
+  vizSubtitle.textContent = `${formatNumber(values.length)} values • μ ${formatNumber(mean, 2)} • ${formatNumber(min, 2)} → ${formatNumber(max, 2)}`;
+}
+
+function pickNumericColumn(rows: TableRow[]): { name: string; values: number[] } | null {
+  if (!currentTableData) {
+    return null;
+  }
+
+  let candidate: { index: number; name: string; values: number[] } | null = null;
+
+  currentTableData.columns.forEach((column, columnIndex) => {
+    const values: number[] = [];
+    rows.forEach((row) => {
+      const value = row.raw[columnIndex];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        values.push(value);
+      }
+    });
+
+    if (values.length === 0) {
+      return;
+    }
+
+    if (!candidate || values.length > candidate.values.length) {
+      candidate = { index: columnIndex, name: column, values };
+    }
+  });
+
+  if (!candidate) {
+    return null;
+  }
+
+  return { name: candidate.name, values: candidate.values };
+}
+
+function resizeOrbitCanvas() {
+  if (!vizCanvas) {
+    return;
+  }
+
+  const displayWidth = vizCanvas.clientWidth || vizCanvas.width;
+  const displayHeight = vizCanvas.clientHeight || vizCanvas.height;
+  const dpr = window.devicePixelRatio || 1;
+
+  const requiredWidth = Math.max(1, Math.floor(displayWidth * dpr));
+  const requiredHeight = Math.max(1, Math.floor(displayHeight * dpr));
+
+  if (vizCanvas.width !== requiredWidth || vizCanvas.height !== requiredHeight) {
+    vizCanvas.width = requiredWidth;
+    vizCanvas.height = requiredHeight;
+  }
+}
+
+function formatNumber(value: number, fractionDigits = 0): string {
+  if (!Number.isFinite(value)) {
+    return '—';
+  }
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: fractionDigits,
+    minimumFractionDigits: fractionDigits > 0 ? Math.min(1, fractionDigits) : 0,
+  });
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '—';
+  }
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms)) {
+    return '';
+  }
+  if (ms >= 1000) {
+    return `${(ms / 1000).toFixed(2)}s`;
+  }
+  return `${Math.round(ms)}ms`;
+}
+
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, ' ').trim();
 }
 
 // Send the 'ready' signal to the extension to start the handshake
