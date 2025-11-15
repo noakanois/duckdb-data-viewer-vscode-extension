@@ -73,6 +73,30 @@ export function activate(context: vscode.ExtensionContext) {
           duckdbReady = true;
           await deliverPendingFile();
         }
+
+        if (message.command === 'get-workspace-files') {
+            const files = await vscode.workspace.findFiles('**/*');
+            panel.webview.postMessage({ command: 'workspace-files', files });
+        }
+
+        if (message.command === 'get-file-content') {
+            try {
+                const fileUri = vscode.Uri.parse(message.path);
+                const fileBytes = await vscode.workspace.fs.readFile(fileUri);
+                panel.webview.postMessage({
+                    command: 'file-content',
+                    fileName: path.basename(fileUri.fsPath),
+                    fileData: fileBytes
+                });
+            } catch (e) {
+                const message = e instanceof Error ? `Failed to read file: ${e.message}` : String(e);
+                panel.webview.postMessage({
+                    command: 'error',
+                    message
+                });
+                vscode.window.showErrorMessage(message);
+            }
+        }
       },
       undefined,
       context.subscriptions
