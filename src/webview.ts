@@ -19,6 +19,10 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const profileContainer = document.getElementById('profile-container') as HTMLDivElement | null;
+const refreshProfileButton = document.getElementById('refresh-profile') as HTMLButtonElement | null;
+const insightList = document.getElementById('insight-list') as HTMLDivElement | null;
+const historyList = document.getElementById('history-list') as HTMLDivElement | null;
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -32,6 +36,36 @@ interface TableData {
   rows: TableRow[];
 }
 
+interface SchemaColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+}
+
+interface InsightDefinition {
+  id: string;
+  label: string;
+  description: string;
+  sql: string;
+}
+
+interface ColumnProfile {
+  name: string;
+  type: string;
+  fillRate: number;
+  nullCount: number;
+  distinctCount: number;
+  minValue: string;
+  maxValue: string;
+  averageValue: string;
+  sampleValues: string[];
+}
+
+interface QueryHistoryEntry {
+  sql: string;
+  timestamp: number;
+}
+
 let db: duckdb.AsyncDuckDB | null = null;
 let connection: duckdb.AsyncDuckDBConnection | null = null;
 let duckdbInitializationPromise: Promise<void> | null = null;
@@ -41,7 +75,12 @@ let globalFilter = '';
 let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex: -1, direction: null };
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
+let activeRelation: { identifier: string; columns: string[] } | null = null;
+let schemaColumns: SchemaColumn[] = [];
+let queryHistory: QueryHistoryEntry[] = [];
 const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
+const PROFILE_COLUMN_LIMIT = 25;
+const HISTORY_LIMIT = 50;
 
 // --- Event Listeners (Moved to top) ---
 
@@ -83,17 +122,22 @@ if (globalSearchInput) {
 if (copySqlButton) {
   copySqlButton.addEventListener('click', async () => {
     try {
-      const clipboard = navigator.clipboard;
-      if (!clipboard) {
+      const didCopy = await copyTextToClipboard(sqlInput.value);
+      if (didCopy) {
+        flashCopyState();
+      } else {
         updateStatus('Clipboard access is not available in this environment.');
-        return;
       }
-      await clipboard.writeText(sqlInput.value);
-      flashCopyState();
     } catch (err) {
       updateStatus('Copy to clipboard is unavailable in this context.');
       console.warn('[Webview] Clipboard copy failed', err);
     }
+  });
+}
+
+if (refreshProfileButton) {
+  refreshProfileButton.addEventListener('click', () => {
+    refreshColumnProfiles(true).catch(reportError);
   });
 }
 
@@ -188,14 +232,44 @@ async function handleFileLoad(fileName: string, fileData: any) {
     updateStatus,
   });
 
+  activeRelation = {
+    identifier: loadResult.relationIdentifier,
+    columns: [...loadResult.columns],
+  };
+  schemaColumns = [];
+  if (insightList) {
+    insightList.innerHTML = '<div class="empty-subtle">Forging turbo insights…</div>';
+  }
+  if (profileContainer) {
+    profileContainer.innerHTML = '<div class="empty-subtle">Scanning columns at hyperspeed…</div>';
+  }
+
   const defaultQuery = buildDefaultQuery(loadResult.columns, loadResult.relationIdentifier);
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
 
-  if (controls) controls.style.display = 'flex';
-  if (resultsContainer) resultsContainer.style.display = 'block';
+  if (controls) {
+    controls.style.display = 'flex';
+  }
+  if (resultsContainer) {
+    resultsContainer.style.display = 'block';
+  }
+
+  const schemaPromise = fetchSchema(loadResult.relationIdentifier);
 
   await runQuery(defaultQuery);
+
+  try {
+    schemaColumns = await schemaPromise;
+  } catch (schemaError) {
+    console.warn('[Webview] Schema introspection failed', schemaError);
+    updateStatus('Loaded data, but schema introspection failed. Insights may be limited.');
+    schemaColumns = [];
+  }
+
+  renderInsightList(generateInsightQueries(loadResult.relationIdentifier, schemaColumns, loadResult.columns));
+  await refreshColumnProfiles();
+  updateStatus('Turbo systems engaged. Trigger an insight or craft your own SQL.');
 }
 
 function selectLoader(fileName: string): DataLoader {
@@ -225,15 +299,22 @@ async function runQuery(sql: string) {
   if (!connection) {
     throw new Error("No database connection.");
   }
-  
+
+  const normalizedSql = sql.trim();
+  if (!normalizedSql) {
+    updateStatus('Enter a SQL query to run.');
+    return;
+  }
+
   // Show status bar for "Running query..."
   updateStatus('Running query...');
   runButton.disabled = true;
 
   try {
-    const result = await connection.query(sql);
+    const result = await connection.query(normalizedSql);
     renderResults(result);
-    
+    recordQuery(normalizedSql);
+
     // --- CHANGE ---
     // Hide the status bar on success
     if (statusWrapper) {
@@ -266,7 +347,9 @@ function renderResults(table: Table | null) {
 
   for (let i = 0; i < table.numRows; i++) {
     const row = table.get(i);
-    if (!row) continue;
+    if (!row) {
+      continue;
+    }
 
     const raw: any[] = [];
     const display: string[] = [];
@@ -366,7 +449,9 @@ function applyTableState() {
       }
     }
     return normalizedFilters.every((filter, idx) => {
-      if (!filter) return true;
+      if (!filter) {
+        return true;
+      }
       return (row.display[idx] ?? '').toLowerCase().includes(filter);
     });
   });
@@ -456,11 +541,21 @@ function updateRowCount(visible: number, total: number) {
   if (!rowCountLabel) {
     return;
   }
-  rowCountLabel.textContent = '';
+  if (total <= 0) {
+    rowCountLabel.textContent = 'No rows available.';
+    return;
+  }
+
+  const visibilityRatio = total > 0 ? (visible / total) * 100 : 0;
+  const formattedVisible = formatCount(visible);
+  const formattedTotal = formatCount(total);
+  rowCountLabel.textContent = `${formattedVisible} visible of ${formattedTotal} rows (${visibilityRatio.toFixed(1)}% in view)`;
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
-  if (a === b) return 0;
+  if (a === b) {
+    return 0;
+  }
 
   const aIsNumber = typeof a === 'number' && Number.isFinite(a);
   const bIsNumber = typeof b === 'number' && Number.isFinite(b);
@@ -497,6 +592,533 @@ function formatCell(value: any): string {
     }
   }
   return String(value);
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    const clipboard = navigator.clipboard;
+    if (!clipboard) {
+      return false;
+    }
+    await clipboard.writeText(text);
+    return true;
+  } catch (error) {
+    console.warn('[Webview] Clipboard interaction failed', error);
+    return false;
+  }
+}
+
+function renderInsightList(insights: InsightDefinition[]) {
+  if (!insightList) {
+    return;
+  }
+
+  if (!insights.length) {
+    insightList.innerHTML = '<div class="empty-subtle">No automated insights available for this dataset.</div>';
+    return;
+  }
+
+  insightList.innerHTML = '';
+  insights.forEach((insight) => {
+    const card = document.createElement('div');
+    card.className = 'insight-card';
+
+    const title = document.createElement('h3');
+    title.textContent = insight.label;
+    const description = document.createElement('p');
+    description.textContent = insight.description;
+
+    const preview = document.createElement('pre');
+    preview.className = 'history-preview';
+    preview.textContent = insight.sql;
+
+    const actions = document.createElement('div');
+    actions.className = 'insight-actions';
+
+    const igniteButton = document.createElement('button');
+    igniteButton.textContent = 'Ignite Insight';
+    igniteButton.addEventListener('click', () => {
+      sqlInput.value = insight.sql;
+      runQuery(insight.sql).catch(reportError);
+    });
+
+    const stageButton = document.createElement('button');
+    stageButton.textContent = 'Load into SQL Lab';
+    stageButton.className = 'ghost-button';
+    stageButton.addEventListener('click', () => {
+      sqlInput.value = insight.sql;
+      updateStatus('Insight loaded into SQL Lab. Tweak and fire when ready.');
+    });
+
+    actions.append(igniteButton, stageButton);
+    card.append(title, description, preview, actions);
+    insightList.appendChild(card);
+  });
+}
+
+function generateInsightQueries(
+  relationIdentifier: string,
+  schema: SchemaColumn[],
+  fallbackColumns: string[],
+): InsightDefinition[] {
+  const insights: InsightDefinition[] = [];
+  const columns = schema.length ? schema.map((column) => column.name) : fallbackColumns;
+  const numericColumns = schema.filter((column) => isNumericType(column.type));
+  const textColumns = schema.filter((column) => isTextType(column.type));
+  const temporalColumns = schema.filter((column) => isTemporalType(column.type));
+
+  if (columns.length) {
+    insights.push({
+      id: 'null-radar',
+      label: 'Null Void Radar',
+      description: 'Ranks every column by emptiness to surface data quality landmines.',
+      sql: buildNullRadarQuery(relationIdentifier, columns),
+    });
+  }
+
+  insights.push({
+    id: 'row-pulse',
+    label: 'Row Pulse Scan',
+    description: 'Total row count plus rolling averages for the loudest numeric signals.',
+    sql: buildRowPulseQuery(relationIdentifier, numericColumns),
+  });
+
+  if (numericColumns.length > 0) {
+    const primaryNumeric = numericColumns[0];
+    insights.push({
+      id: `distribution-${primaryNumeric.name}`,
+      label: `Distribution Reactor · ${primaryNumeric.name}`,
+      description: 'Quartiles, spread, and volatility for the headline numeric column.',
+      sql: buildNumericDistributionQuery(relationIdentifier, primaryNumeric.name),
+    });
+  }
+
+  if (numericColumns.length > 1) {
+    const [a, b] = numericColumns;
+    insights.push({
+      id: `correlation-${a.name}-${b.name}`,
+      label: `Correlation Collider · ${a.name} ↔ ${b.name}`,
+      description: 'Pearson correlation to test whether your top measures move in sync.',
+      sql: buildCorrelationQuery(relationIdentifier, a.name, b.name),
+    });
+  }
+
+  if (textColumns.length > 0) {
+    const primaryText = textColumns[0];
+    insights.push({
+      id: `frequency-${primaryText.name}`,
+      label: `Category Frequency Blast · ${primaryText.name}`,
+      description: 'Top categories with share of rows to spotlight runaway values.',
+      sql: buildCategoryFrequencyQuery(relationIdentifier, primaryText.name),
+    });
+  }
+
+  if (temporalColumns.length > 0) {
+    const temporal = temporalColumns[0];
+    insights.push({
+      id: `timeline-${temporal.name}`,
+      label: `Timeline Waveform · ${temporal.name}`,
+      description: 'Daily row counts to expose surges, droughts, and seasonality.',
+      sql: buildTimelineQuery(relationIdentifier, temporal.name),
+    });
+  }
+
+  insights.push({
+    id: 'random-projection',
+    label: 'Random Projection Sample',
+    description: '200-row randomized slice to eyeball anomalies instantly.',
+    sql: buildRandomProjectionQuery(relationIdentifier),
+  });
+
+  return insights;
+}
+
+function buildNullRadarQuery(relationIdentifier: string, columns: string[]): string {
+  const unionSections = columns.map((column) => {
+    const identifier = formatIdentifierForSql(column);
+    const label = escapeSqlString(column);
+    return `SELECT '${label}' AS column_name,\n       COUNT(*) AS total_rows,\n       SUM(CASE WHEN ${identifier} IS NULL THEN 1 ELSE 0 END) AS null_rows,\n       ROUND(100.0 * SUM(CASE WHEN ${identifier} IS NULL THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS null_pct\nFROM base`;
+  });
+
+  return `WITH base AS (\n  SELECT * FROM ${relationIdentifier}\n)\n${unionSections.join('\nUNION ALL\n')}\nORDER BY null_pct DESC;`;
+}
+
+function buildRowPulseQuery(relationIdentifier: string, numericColumns: SchemaColumn[]): string {
+  const aggregations: string[] = ['COUNT(*) AS total_rows'];
+  numericColumns.slice(0, 3).forEach((column) => {
+    const identifier = formatIdentifierForSql(column.name);
+    const alias = formatIdentifierForSql(`avg_${toSnakeCase(column.name)}`);
+    aggregations.push(`AVG(${identifier}) AS ${alias}`);
+  });
+
+  return `SELECT\n  ${aggregations.join(',\n  ')}\nFROM ${relationIdentifier};`;
+}
+
+function buildNumericDistributionQuery(relationIdentifier: string, columnName: string): string {
+  const identifier = formatIdentifierForSql(columnName);
+  return `SELECT\n  MIN(${identifier}) AS min_value,\n  QUANTILE_CONT(${identifier}, 0.25) AS q1,\n  QUANTILE_CONT(${identifier}, 0.5) AS median,\n  QUANTILE_CONT(${identifier}, 0.75) AS q3,\n  MAX(${identifier}) AS max_value,\n  AVG(${identifier}) AS avg_value,\n  STDDEV_POP(${identifier}) AS stddev\nFROM ${relationIdentifier}\nWHERE ${identifier} IS NOT NULL;`;
+}
+
+function buildCorrelationQuery(relationIdentifier: string, columnA: string, columnB: string): string {
+  const a = formatIdentifierForSql(columnA);
+  const b = formatIdentifierForSql(columnB);
+  const alias = formatIdentifierForSql(`corr_${toSnakeCase(columnA)}_${toSnakeCase(columnB)}`);
+  return `SELECT\n  CORR(${a}, ${b}) AS ${alias}\nFROM ${relationIdentifier}\nWHERE ${a} IS NOT NULL AND ${b} IS NOT NULL;`;
+}
+
+function buildCategoryFrequencyQuery(relationIdentifier: string, columnName: string): string {
+  const identifier = formatIdentifierForSql(columnName);
+  return `WITH base AS (SELECT COUNT(*) AS total_rows FROM ${relationIdentifier})\nSELECT\n  ${identifier} AS value,\n  COUNT(*) AS frequency,\n  ROUND(100.0 * COUNT(*) / NULLIF((SELECT total_rows FROM base), 0), 2) AS pct_share\nFROM ${relationIdentifier}\nWHERE ${identifier} IS NOT NULL\nGROUP BY 1\nORDER BY frequency DESC\nLIMIT 25;`;
+}
+
+function buildTimelineQuery(relationIdentifier: string, columnName: string): string {
+  const identifier = formatIdentifierForSql(columnName);
+  return `SELECT\n  DATE_TRUNC('day', ${identifier}) AS day,\n  COUNT(*) AS rows\nFROM ${relationIdentifier}\nWHERE ${identifier} IS NOT NULL\nGROUP BY 1\nORDER BY day;`;
+}
+
+function buildRandomProjectionQuery(relationIdentifier: string): string {
+  return `SELECT *\nFROM ${relationIdentifier}\nORDER BY RANDOM()\nLIMIT 200;`;
+}
+
+async function fetchSchema(relationIdentifier: string): Promise<SchemaColumn[]> {
+  if (!connection) {
+    throw new Error('No database connection.');
+  }
+  const pragma = await connection.query(`PRAGMA table_info(${relationIdentifier});`);
+  return tableToObjects(pragma).map((row: any) => {
+    const notNullRaw = row.notnull;
+    const notNull = typeof notNullRaw === 'boolean'
+      ? notNullRaw
+      : typeof notNullRaw === 'number'
+        ? notNullRaw === 1
+        : typeof notNullRaw === 'bigint'
+          ? notNullRaw === BigInt(1)
+          : false;
+    return {
+      name: String(row.name ?? ''),
+      type: String(row.type ?? 'UNKNOWN'),
+      nullable: !notNull,
+    };
+  });
+}
+
+async function refreshColumnProfiles(triggeredByUser = false) {
+  if (!activeRelation || !profileContainer) {
+    return;
+  }
+
+  if (!schemaColumns.length) {
+    profileContainer.innerHTML = '<div class="empty-subtle">Schema information unavailable. Run a query to hydrate the profile.</div>';
+    return;
+  }
+
+  const truncated = schemaColumns.length > PROFILE_COLUMN_LIMIT;
+  const targetSchema = schemaColumns.slice(0, PROFILE_COLUMN_LIMIT);
+  profileContainer.innerHTML = '<div class="empty-subtle">Crunching column diagnostics…</div>';
+  if (triggeredByUser) {
+    updateStatus('Refreshing the hyper-profiler…');
+  }
+
+  try {
+    const profiles = await computeColumnProfiles(activeRelation.identifier, targetSchema);
+    renderColumnProfiles(profiles, truncated);
+    if (triggeredByUser) {
+      updateStatus('Hyper-profiler refreshed.');
+    }
+  } catch (error) {
+    profileContainer.innerHTML = `<div class="empty-subtle">Profiling failed: ${error instanceof Error ? error.message : String(error)}</div>`;
+    throw error;
+  }
+}
+
+async function computeColumnProfiles(
+  relationIdentifier: string,
+  columns: SchemaColumn[],
+): Promise<ColumnProfile[]> {
+  if (!connection) {
+    throw new Error('No database connection.');
+  }
+
+  const profiles: ColumnProfile[] = [];
+  for (const column of columns) {
+    const identifier = formatIdentifierForSql(column.name);
+    const statsQuery = `SELECT\n      COUNT(*) AS total_rows,\n      COUNT(${identifier}) AS non_nulls,\n      COUNT(DISTINCT ${identifier}) AS distinct_count,\n      MIN(${identifier}) AS min_value,\n      MAX(${identifier}) AS max_value,\n      AVG(${identifier}) AS avg_value\n    FROM ${relationIdentifier};`;
+    const statsRow = tableToObjects(await connection.query(statsQuery))[0] ?? {};
+
+    const totalRows = toNumber(statsRow.total_rows);
+    const nonNulls = toNumber(statsRow.non_nulls);
+    const distinct = toNumber(statsRow.distinct_count);
+    const nullCount = Math.max(0, totalRows - nonNulls);
+    const fillRate = totalRows > 0 ? (nonNulls / totalRows) * 100 : 0;
+
+    const sampleQuery = `SELECT ${identifier} AS value FROM ${relationIdentifier} WHERE ${identifier} IS NOT NULL LIMIT 3;`;
+    const sampleValues = tableToObjects(await connection.query(sampleQuery))
+      .map((row: any) => formatCell(row.value))
+      .filter((value: string) => value.length > 0);
+
+    const avgValue = statsRow.avg_value;
+
+    profiles.push({
+      name: column.name,
+      type: column.type,
+      fillRate,
+      nullCount,
+      distinctCount: distinct,
+      minValue: formatCell(statsRow.min_value),
+      maxValue: formatCell(statsRow.max_value),
+      averageValue: isNumericType(column.type)
+        ? formatNumericValue(avgValue)
+        : '',
+      sampleValues,
+    });
+  }
+
+  return profiles;
+}
+
+function renderColumnProfiles(profiles: ColumnProfile[], truncated: boolean) {
+  if (!profileContainer) {
+    return;
+  }
+
+  if (!profiles.length) {
+    profileContainer.innerHTML = '<div class="empty-subtle">No column metrics available for this dataset.</div>';
+    return;
+  }
+
+  profileContainer.innerHTML = '';
+  profiles.forEach((profile) => {
+    const card = document.createElement('div');
+    card.className = 'profile-card';
+
+    const title = document.createElement('h3');
+    title.textContent = profile.name;
+
+    const meta = document.createElement('div');
+    meta.className = 'profile-meta';
+    meta.textContent = `${profile.type.toUpperCase()} • ${formatPercent(profile.fillRate)} filled`;
+
+    const progress = document.createElement('div');
+    progress.className = 'profile-progress';
+    const progressValue = document.createElement('span');
+    progressValue.style.width = `${Math.max(0, Math.min(100, profile.fillRate))}%`;
+    progress.appendChild(progressValue);
+
+    const metrics = document.createElement('div');
+    metrics.className = 'profile-metrics';
+    metrics.append(createMetric('Distinct', formatCount(profile.distinctCount)));
+    metrics.append(createMetric('Nulls', formatCount(profile.nullCount)));
+    if (profile.minValue) {
+      metrics.append(createMetric('Min', profile.minValue));
+    }
+    if (profile.maxValue) {
+      metrics.append(createMetric('Max', profile.maxValue));
+    }
+    if (profile.averageValue) {
+      metrics.append(createMetric('Avg', profile.averageValue));
+    }
+    const samples = createMetric('Samples', profile.sampleValues.length ? profile.sampleValues.join(', ') : '—');
+    samples.style.gridColumn = '1 / -1';
+    metrics.append(samples);
+
+    card.append(title, meta, progress, metrics);
+    profileContainer.appendChild(card);
+  });
+
+  if (truncated) {
+    const note = document.createElement('div');
+    note.className = 'empty-subtle';
+    note.textContent = `Showing first ${PROFILE_COLUMN_LIMIT} columns for warp-speed diagnostics.`;
+    profileContainer.appendChild(note);
+  }
+}
+
+function createMetric(label: string, value: string): HTMLDivElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'profile-metric';
+  const strong = document.createElement('strong');
+  strong.textContent = label;
+  const span = document.createElement('span');
+  span.textContent = value || '—';
+  wrapper.append(strong, span);
+  return wrapper;
+}
+
+function recordQuery(sql: string) {
+  const normalized = sql.trim();
+  if (!normalized) {
+    return;
+  }
+
+  const existingIndex = queryHistory.findIndex((entry) => entry.sql === normalized);
+  if (existingIndex >= 0) {
+    queryHistory.splice(existingIndex, 1);
+  }
+
+  queryHistory.unshift({ sql: normalized, timestamp: Date.now() });
+  if (queryHistory.length > HISTORY_LIMIT) {
+    queryHistory = queryHistory.slice(0, HISTORY_LIMIT);
+  }
+
+  renderHistory();
+}
+
+function renderHistory() {
+  if (!historyList) {
+    return;
+  }
+
+  if (!queryHistory.length) {
+    historyList.innerHTML = '<div class="empty-subtle">No queries yet. Fire off a SQL blast to seed the timeline.</div>';
+    return;
+  }
+
+  historyList.innerHTML = '';
+  queryHistory.forEach((entry, index) => {
+    historyList.appendChild(createHistoryItem(entry, index));
+  });
+}
+
+function createHistoryItem(entry: QueryHistoryEntry, index: number): HTMLDivElement {
+  const item = document.createElement('div');
+  item.className = 'history-item';
+
+  const title = document.createElement('h3');
+  const time = new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  title.textContent = `Query #${index + 1} · ${time}`;
+
+  const preview = document.createElement('pre');
+  preview.className = 'history-preview';
+  preview.textContent = entry.sql;
+
+  const actions = document.createElement('div');
+  actions.className = 'history-actions';
+
+  const replayButton = document.createElement('button');
+  replayButton.textContent = 'Replay';
+  replayButton.addEventListener('click', () => {
+    sqlInput.value = entry.sql;
+    runQuery(entry.sql).catch(reportError);
+  });
+
+  const stageButton = document.createElement('button');
+  stageButton.textContent = 'Load into SQL Lab';
+  stageButton.className = 'ghost-button';
+  stageButton.addEventListener('click', () => {
+    sqlInput.value = entry.sql;
+    updateStatus('Query staged in SQL Lab. Modify and relaunch when ready.');
+  });
+
+  const copyButton = document.createElement('button');
+  copyButton.textContent = 'Copy';
+  copyButton.className = 'ghost-button';
+  copyButton.addEventListener('click', async () => {
+    const didCopy = await copyTextToClipboard(entry.sql);
+    if (!didCopy) {
+      updateStatus('Clipboard access is not available in this environment.');
+    }
+  });
+
+  actions.append(replayButton, stageButton, copyButton);
+  item.append(title, preview, actions);
+  return item;
+}
+
+function tableToObjects(table: Table | null): any[] {
+  if (!table) {
+    return [];
+  }
+  const anyTable = table as any;
+  if (typeof anyTable.toArray === 'function') {
+    return anyTable.toArray();
+  }
+  const rows: any[] = [];
+  for (let i = 0; i < table.numRows; i++) {
+    const row = table.get(i);
+    if (row) {
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
+function formatCount(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+  return Math.round(value).toLocaleString();
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0%';
+  }
+  return `${value.toFixed(1)}%`;
+}
+
+function formatNumericValue(value: any, maximumFractionDigits = 4): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'bigint') {
+    return Number(value).toLocaleString();
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return '';
+    }
+    return value.toLocaleString(undefined, { maximumFractionDigits });
+  }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return numeric.toLocaleString(undefined, { maximumFractionDigits });
+  }
+  return String(value);
+}
+
+function toNumber(value: any): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (typeof value === 'bigint') {
+    return Number(value);
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function toSnakeCase(value: string): string {
+  let sanitized = value.replace(/[^A-Za-z0-9]+/g, '_').replace(/_{2,}/g, '_').replace(/^_+|_+$/g, '');
+  if (!sanitized) {
+    sanitized = 'value';
+  }
+  if (/^[0-9]/.test(sanitized)) {
+    sanitized = `c_${sanitized}`;
+  }
+  return sanitized.toLowerCase();
+}
+
+function formatIdentifierForSql(identifier: string): string {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+    return identifier;
+  }
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function escapeSqlString(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+function isNumericType(type: string): boolean {
+  return /(DOUBLE|FLOAT|REAL|INT|DECIMAL|NUMERIC|HUGEINT|BIGINT|UBIGINT|SMALLINT|TINYINT)/i.test(type);
+}
+
+function isTemporalType(type: string): boolean {
+  return /(DATE|TIME|TIMESTAMP)/i.test(type);
+}
+
+function isTextType(type: string): boolean {
+  return /(CHAR|TEXT|STRING|VARCHAR|UUID)/i.test(type);
 }
 
 // ---

@@ -66,6 +66,11 @@
       gap: 16px;
       min-height: 0;
     }
+    .panels-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
     .panel {
       background: var(--panel-bg);
       border: 1px solid var(--panel-border);
@@ -102,8 +107,8 @@
       color: inherit;
       padding: 8px 12px;
     }
-    #results-panel {
-      flex: 1;
+    #analysis-grid #results-panel {
+      grid-column: 1 / -1;
     }
     #results-container {
       display: none;
@@ -256,6 +261,112 @@
       flex-direction: column;
       gap: 8px;
     }
+    .profile-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .profile-card {
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .profile-card h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .profile-meta {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .profile-metrics {
+      display: grid;
+      gap: 4px 8px;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      font-size: 12px;
+    }
+    .profile-metric strong {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 2px;
+    }
+    .profile-progress {
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+    .profile-progress span {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+    }
+    .insight-list,
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .insight-card,
+    .history-item {
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .insight-card h3,
+    .history-item h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .insight-card p,
+    .history-item p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .insight-actions,
+    .history-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .ghost-button {
+      background: transparent;
+      color: inherit;
+      border: 1px solid var(--panel-border);
+    }
+    .history-preview {
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      max-height: 90px;
+      overflow: auto;
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 6px;
+      padding: 8px;
+    }
+    .empty-subtle {
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 16px 0;
+    }
+    .panel-tagline {
+      margin: 2px 0 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
@@ -265,32 +376,76 @@
     </div>
 
     <main>
-      <section class="panel" id="results-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Data Preview</h2>
-            <div id="row-count">Awaiting data…</div>
+      <div class="panels-grid" id="analysis-grid">
+        <section class="panel" id="results-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Data Preview</h2>
+              <div id="row-count">Awaiting data…</div>
+            </div>
+            <input type="search" id="global-search" placeholder="Search across all columns" />
           </div>
-          <input type="search" id="global-search" placeholder="Search across all columns" />
-        </div>
-        <div id="results-container">
-          <div class="empty-state">Load a file to see the first rows.</div>
-        </div>
-      </section>
+          <div id="results-container">
+            <div class="empty-state">Load a file to see the first rows.</div>
+          </div>
+        </section>
 
-      <section class="panel" id="controls">
-        <div class="panel-heading">
-          <h2>SQL Preview</h2>
-          <div class="sql-actions">
-            <button id="copy-sql">Copy SQL</button>
-            <button id="run-query">Run Query</button>
+        <section class="panel" id="profile-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Hyper-Profiler</h2>
+              <p class="panel-tagline">Column-level health scans and instant samples.</p>
+            </div>
+            <button id="refresh-profile" class="ghost-button">Refresh Profile</button>
           </div>
-        </div>
-        <div class="sql-grid">
-          <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
-          <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
-        </div>
-      </section>
+          <div id="profile-container" class="profile-grid">
+            <div class="empty-subtle">Load data to unleash the hyper-profiler.</div>
+          </div>
+        </section>
+      </div>
+
+      <div class="panels-grid" id="control-grid">
+        <section class="panel" id="controls">
+          <div class="panel-heading">
+            <div>
+              <h2>SQL Lab</h2>
+              <p class="panel-tagline">Compose anything, the engine will keep up.</p>
+            </div>
+            <div class="sql-actions">
+              <button id="copy-sql">Copy SQL</button>
+              <button id="run-query">Run Query</button>
+            </div>
+          </div>
+          <div class="sql-grid">
+            <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
+            <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="insights-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Turbo Insights</h2>
+              <p class="panel-tagline">One-click analytical detonators tailored to your data.</p>
+            </div>
+          </div>
+          <div id="insight-list" class="insight-list">
+            <div class="empty-subtle">Load a file to auto-forge custom insight queries.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="history-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Time Machine</h2>
+              <p class="panel-tagline">Every query you launch is captured for instant replay.</p>
+            </div>
+          </div>
+          <div id="history-list" class="history-list">
+            <div class="empty-subtle">No queries yet. Fire off a SQL blast to seed the timeline.</div>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
