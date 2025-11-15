@@ -7,14 +7,14 @@
         style-src {{csp_source}} 'unsafe-inline';
         script-src 'nonce-{{nonce}}' 'unsafe-eval';
         worker-src blob:;
-        connect-src 
-            {{csp_source}} 
-            https://file+.vscode-resource.vscode-cdn.net 
-            blob: 
+        connect-src
+            {{csp_source}}
+            https://file+.vscode-resource.vscode-cdn.net
+            blob:
             https:;
     ">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DuckDB Viewer</title>
+  <title>DuckDB Viewer - RADICAL UI REVOLUTION</title>
   <script type="module" nonce="{{nonce}}" src="{{toolkit_uri}}"></script>
   <style>
     :root {
@@ -27,6 +27,8 @@
     * {
       box-sizing: border-box;
     }
+
+    /* ============ BASE THEME ============ */
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0;
@@ -35,13 +37,360 @@
       color: var(--vscode-editor-foreground);
       height: 100vh;
       display: flex;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
+
+    /* ============ THEME SWITCHER ============ */
+    #theme-switcher {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 9999;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .theme-btn {
+      padding: 6px 10px;
+      border: 2px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      background: rgba(255, 255, 255, 0.1);
+      color: inherit;
+    }
+
+    .theme-btn.active {
+      border-color: #00ff00;
+      background: rgba(0, 255, 0, 0.2);
+      box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+    }
+
+    .theme-btn:hover {
+      transform: scale(1.05);
+    }
+
+    /* ============ NEON CYBERPUNK THEME ============ */
+    body.theme-cyberpunk {
+      background: linear-gradient(135deg, #0a0e27 0%, #1a0040 100%);
+      color: #00ff88;
+      font-family: 'Courier New', monospace;
+    }
+
+    body.theme-cyberpunk .app-shell {
+      text-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+    }
+
+    body.theme-cyberpunk .panel,
+    body.theme-cyberpunk #status-wrapper {
+      background: rgba(0, 20, 40, 0.8);
+      border: 2px solid #00ff88;
+      box-shadow: 0 0 20px rgba(0, 255, 136, 0.4), inset 0 0 20px rgba(0, 255, 136, 0.05);
+      backdrop-filter: blur(10px);
+    }
+
+    body.theme-cyberpunk thead th,
+    body.theme-cyberpunk .filter-row th {
+      background: rgba(0, 255, 136, 0.1);
+      border-bottom: 1px solid #00ff88;
+    }
+
+    body.theme-cyberpunk tbody tr:hover {
+      background: rgba(0, 255, 136, 0.15);
+      box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+    }
+
+    body.theme-cyberpunk #sql-input {
+      background: rgba(0, 10, 20, 0.9);
+      color: #00ff88;
+      border: 2px solid #00ff88;
+      box-shadow: 0 0 15px rgba(0, 255, 136, 0.2), inset 0 0 10px rgba(0, 255, 136, 0.05);
+    }
+
+    body.theme-cyberpunk button {
+      background: rgba(0, 255, 136, 0.2);
+      border: 2px solid #00ff88;
+      color: #00ff88;
+      transition: all 0.3s ease;
+    }
+
+    body.theme-cyberpunk button:hover {
+      background: rgba(0, 255, 136, 0.4);
+      box-shadow: 0 0 15px rgba(0, 255, 136, 0.6);
+      text-shadow: 0 0 10px rgba(0, 255, 136, 0.8);
+    }
+
+    body.theme-cyberpunk #global-search {
+      background: rgba(0, 10, 20, 0.9);
+      color: #00ff88;
+      border: 2px solid #00ff88;
+    }
+
+    body.theme-cyberpunk #global-search::placeholder {
+      color: rgba(0, 255, 136, 0.5);
+    }
+
+    body.theme-cyberpunk .header-button {
+      color: #00ff88;
+    }
+
+    body.theme-cyberpunk .header-button:hover {
+      text-shadow: 0 0 10px rgba(0, 255, 136, 0.8);
+    }
+
+    /* ============ MATRIX RAIN THEME ============ */
+    body.theme-matrix {
+      background: #000;
+      color: #00ff00;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      overflow: hidden;
+    }
+
+    body.theme-matrix::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 255, 0, 0.03),
+        rgba(0, 255, 0, 0.03) 1px,
+        transparent 1px,
+        transparent 2px
+      );
+      pointer-events: none;
+      z-index: -1;
+      animation: scanlines 0.15s linear infinite;
+    }
+
+    @keyframes scanlines {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(10px); }
+    }
+
+    body.theme-matrix .app-shell {
+      text-shadow: 0 0 10px #00ff00;
+    }
+
+    body.theme-matrix .panel,
+    body.theme-matrix #status-wrapper {
+      background: rgba(0, 0, 0, 0.7);
+      border: 2px solid #00ff00;
+      box-shadow: 0 0 20px rgba(0, 255, 0, 0.5), inset 0 0 20px rgba(0, 255, 0, 0.1);
+    }
+
+    body.theme-matrix thead th,
+    body.theme-matrix .filter-row th {
+      background: rgba(0, 255, 0, 0.15);
+      border-bottom: 2px solid #00ff00;
+    }
+
+    body.theme-matrix tbody tr {
+      transition: all 0.1s ease;
+    }
+
+    body.theme-matrix tbody tr:hover {
+      background: rgba(0, 255, 0, 0.2);
+      box-shadow: 0 0 20px rgba(0, 255, 0, 0.6);
+      text-shadow: 0 0 10px #00ff00;
+    }
+
+    body.theme-matrix #sql-input {
+      background: #000;
+      color: #00ff00;
+      border: 2px solid #00ff00;
+      box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+      text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+    }
+
+    body.theme-matrix button {
+      background: rgba(0, 255, 0, 0.1);
+      border: 2px solid #00ff00;
+      color: #00ff00;
+      text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+    }
+
+    body.theme-matrix button:hover {
+      background: rgba(0, 255, 0, 0.3);
+      box-shadow: 0 0 20px rgba(0, 255, 0, 0.8);
+    }
+
+    body.theme-matrix #global-search {
+      background: #000;
+      color: #00ff00;
+      border: 2px solid #00ff00;
+      text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+    }
+
+    body.theme-matrix #global-search::placeholder {
+      color: rgba(0, 255, 0, 0.4);
+    }
+
+    /* ============ HACKER TERMINAL THEME ============ */
+    body.theme-hacker {
+      background: #0d1117;
+      color: #39ff14;
+      font-family: 'Courier New', 'Courier', monospace;
+      letter-spacing: 0.05em;
+    }
+
+    body.theme-hacker::after {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background:
+        repeating-linear-gradient(
+          0deg,
+          rgba(0, 0, 0, 0.15),
+          rgba(0, 0, 0, 0.15) 1px,
+          transparent 1px,
+          transparent 2px
+        ),
+        repeating-linear-gradient(
+          90deg,
+          rgba(57, 255, 20, 0.05),
+          rgba(57, 255, 20, 0.05) 2px,
+          transparent 2px,
+          transparent 4px
+        );
+      pointer-events: none;
+      z-index: -1;
+      animation: glitch 0.2s infinite;
+    }
+
+    @keyframes glitch {
+      0% { transform: translate(0); }
+      20% { transform: translate(-2px, 2px); }
+      40% { transform: translate(-2px, -2px); }
+      60% { transform: translate(2px, 2px); }
+      80% { transform: translate(2px, -2px); }
+      100% { transform: translate(0); }
+    }
+
+    body.theme-hacker .panel,
+    body.theme-hacker #status-wrapper {
+      background: rgba(13, 17, 23, 0.9);
+      border: 1px solid #39ff14;
+      box-shadow: 0 0 10px rgba(57, 255, 20, 0.2), inset 0 0 10px rgba(57, 255, 20, 0.02);
+    }
+
+    body.theme-hacker thead th,
+    body.theme-hacker .filter-row th {
+      background: rgba(57, 255, 20, 0.08);
+      border-bottom: 1px solid #39ff14;
+    }
+
+    body.theme-hacker tbody tr:hover {
+      background: rgba(57, 255, 20, 0.1);
+    }
+
+    body.theme-hacker #sql-input {
+      background: #0d1117;
+      color: #39ff14;
+      border: 1px solid #39ff14;
+      box-shadow: inset 0 0 5px rgba(57, 255, 20, 0.1);
+    }
+
+    body.theme-hacker button {
+      background: transparent;
+      border: 1px solid #39ff14;
+      color: #39ff14;
+    }
+
+    body.theme-hacker button:hover {
+      background: rgba(57, 255, 20, 0.1);
+      box-shadow: 0 0 10px rgba(57, 255, 20, 0.3);
+    }
+
+    body.theme-hacker #global-search {
+      background: #0d1117;
+      color: #39ff14;
+      border: 1px solid #39ff14;
+    }
+
+    /* ============ HOLOGRAPHIC THEME ============ */
+    body.theme-holographic {
+      background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2a 50%, #0a1a2a 100%);
+      color: #00d4ff;
+      animation: holo-shift 4s ease-in-out infinite;
+    }
+
+    @keyframes holo-shift {
+      0%, 100% { background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2a 50%, #0a1a2a 100%); }
+      50% { background: linear-gradient(135deg, #0a1a2a 0%, #1a0a1a 50%, #2a0a2a 100%); }
+    }
+
+    body.theme-holographic .app-shell {
+      perspective: 1000px;
+    }
+
+    body.theme-holographic .panel,
+    body.theme-holographic #status-wrapper {
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.05) 0%, rgba(255, 0, 212, 0.05) 100%);
+      border: 2px solid;
+      border-image: linear-gradient(135deg, #00d4ff 0%, #ff00d4 100%) 1;
+      box-shadow:
+        0 0 30px rgba(0, 212, 255, 0.3),
+        0 0 60px rgba(255, 0, 212, 0.2),
+        inset 0 0 30px rgba(0, 212, 255, 0.05);
+      backdrop-filter: blur(15px);
+      transform: translateZ(50px);
+    }
+
+    body.theme-holographic thead th,
+    body.theme-holographic .filter-row th {
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(255, 0, 212, 0.1) 100%);
+      border-bottom: 1px solid #00d4ff;
+    }
+
+    body.theme-holographic tbody tr:hover {
+      background: rgba(0, 212, 255, 0.15);
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+    }
+
+    body.theme-holographic #sql-input {
+      background: rgba(0, 0, 20, 0.7);
+      color: #00d4ff;
+      border: 2px solid #00d4ff;
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3), inset 0 0 10px rgba(0, 212, 255, 0.1);
+    }
+
+    body.theme-holographic button {
+      background: rgba(0, 212, 255, 0.15);
+      border: 2px solid #00d4ff;
+      color: #00d4ff;
+      transition: all 0.3s ease;
+    }
+
+    body.theme-holographic button:hover {
+      background: rgba(0, 212, 255, 0.3);
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.7);
+    }
+
+    body.theme-holographic #global-search {
+      background: rgba(0, 0, 20, 0.7);
+      color: #00d4ff;
+      border: 2px solid #00d4ff;
+    }
+
+    /* ============ BASE STYLES ============ */
     .app-shell {
       display: flex;
       flex-direction: column;
       gap: 16px;
       width: 100%;
     }
+
     #status-wrapper {
       background: var(--panel-bg);
       border: 1px solid var(--panel-border);
@@ -52,13 +401,16 @@
       gap: 12px;
       min-height: 56px;
     }
+
     #status {
       font-weight: 500;
       flex: 1;
     }
+
     #status.error {
       color: var(--vscode-errorForeground);
     }
+
     main {
       flex: 1;
       display: flex;
@@ -66,6 +418,7 @@
       gap: 16px;
       min-height: 0;
     }
+
     .panel {
       background: var(--panel-bg);
       border: 1px solid var(--panel-border);
@@ -76,6 +429,7 @@
       gap: 12px;
       min-height: 0;
     }
+
     .panel-heading {
       display: flex;
       justify-content: space-between;
@@ -83,16 +437,19 @@
       gap: 16px;
       flex-wrap: wrap;
     }
+
     .panel-heading h2 {
       margin: 0;
       font-size: 16px;
       font-weight: 600;
     }
+
     .panel-heading p {
       margin: 2px 0 0 0;
       font-size: 12px;
       color: var(--muted);
     }
+
     #global-search {
       flex: 1;
       min-width: 220px;
@@ -101,10 +458,13 @@
       background: var(--vscode-editor-background);
       color: inherit;
       padding: 8px 12px;
+      transition: all 0.3s ease;
     }
+
     #results-panel {
       flex: 1;
     }
+
     #results-container {
       display: none;
       flex: 1;
@@ -114,12 +474,14 @@
       background: var(--vscode-editor-background);
       box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
     }
+
     table {
       width: 100%;
       border-collapse: separate;
       border-spacing: 0;
       font-size: 13px;
     }
+
     thead th {
       background: var(--panel-bg);
       text-align: left;
@@ -127,32 +489,39 @@
       border-bottom: 1px solid var(--panel-border);
       padding: 0;
     }
+
     thead .column-row th {
       position: sticky;
       top: 0;
       z-index: 2;
     }
+
     thead .filter-row th {
       position: sticky;
       top: var(--column-header-height);
       z-index: 1;
       background: var(--panel-bg);
     }
+
     th, td {
       padding: 10px 12px;
       border-bottom: 1px solid var(--panel-border);
     }
+
     tbody tr:nth-child(even) {
       background: rgba(255, 255, 255, 0.02);
     }
+
     tbody tr:hover {
       background: rgba(255, 255, 255, 0.06);
     }
+
     .empty-row {
       text-align: center;
       font-style: italic;
       color: var(--muted);
     }
+
     .header-button {
       width: 100%;
       background: none;
@@ -166,18 +535,22 @@
       padding: 10px 12px;
       cursor: pointer;
     }
+
     .header-button .sort-indicator {
       font-size: 10px;
       color: var(--muted);
       width: 10px;
       text-align: right;
     }
+
     .header-button[data-sort="asc"] .sort-indicator::after {
       content: "▲";
     }
+
     .header-button[data-sort="desc"] .sort-indicator::after {
       content: "▼";
     }
+
     .filter-row input {
       width: 100%;
       border: none;
@@ -187,25 +560,30 @@
       color: inherit;
       font-size: 12px;
     }
+
     .filter-row input:focus {
       outline: 1px solid var(--accent);
     }
+
     .empty-state {
       padding: 60px 0;
       text-align: center;
       color: var(--muted);
       font-size: 14px;
     }
+
     #row-count {
       font-size: 12px;
       color: var(--muted);
       margin-top: 2px;
     }
+
     #controls {
       display: none;
       flex-direction: column;
       gap: 12px;
     }
+
     #sql-input {
       width: 100%;
       min-height: 160px;
@@ -219,80 +597,221 @@
       line-height: 1.5;
       resize: vertical;
       box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+      transition: all 0.3s ease;
     }
+
     .sql-actions {
       display: flex;
       gap: 8px;
       align-items: center;
       flex-wrap: wrap;
     }
+
     button {
       border-radius: 8px;
       border: 1px solid transparent;
       font-size: 13px;
       padding: 8px 14px;
       cursor: pointer;
+      transition: all 0.3s ease;
     }
+
     #run-query {
       background-color: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
       border-color: var(--vscode-button-border, transparent);
     }
+
     #run-query:disabled {
       opacity: 0.6;
       cursor: default;
     }
+
     #copy-sql {
       background: transparent;
       color: inherit;
       border: 1px solid var(--panel-border);
     }
+
     .sql-hints {
       font-size: 12px;
       color: var(--muted);
     }
+
     .sql-grid {
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
+
+    /* ============ STATS SIDEBAR ============ */
+    #stats-sidebar {
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .stat-item {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--panel-border);
+    }
+
+    .stat-item:last-child {
+      border-bottom: none;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    /* Theme-specific stat colors */
+    body.theme-cyberpunk .stat-value {
+      color: #00ff88;
+      text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+    }
+
+    body.theme-matrix .stat-value {
+      color: #00ff00;
+      text-shadow: 0 0 10px #00ff00;
+      font-family: 'Courier New', monospace;
+    }
+
+    body.theme-hacker .stat-value {
+      color: #39ff14;
+      text-shadow: 0 0 5px rgba(57, 255, 20, 0.5);
+    }
+
+    body.theme-holographic .stat-value {
+      color: #00d4ff;
+      text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+    }
+
+    code {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+    }
   </style>
 </head>
 <body>
+  <div id="theme-switcher">
+    <button class="theme-btn active" data-theme="default">Standard</button>
+    <button class="theme-btn" data-theme="cyberpunk">🌆 Cyberpunk</button>
+    <button class="theme-btn" data-theme="matrix">💚 Matrix</button>
+    <button class="theme-btn" data-theme="hacker">⚙️ Hacker</button>
+    <button class="theme-btn" data-theme="holographic">✨ Holo</button>
+  </div>
+
   <div class="app-shell">
     <div id="status-wrapper">
       <div id="status">Initializing…</div>
     </div>
 
-    <main>
-      <section class="panel" id="results-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Data Preview</h2>
-            <div id="row-count">Awaiting data…</div>
+    <main style="display: flex; gap: 16px;">
+      <section style="flex: 1; display: flex; flex-direction: column; gap: 16px; min-height: 0;">
+        <section class="panel" id="results-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Data Preview</h2>
+              <div id="row-count">Awaiting data…</div>
+            </div>
+            <input type="search" id="global-search" placeholder="Search across all columns" />
           </div>
-          <input type="search" id="global-search" placeholder="Search across all columns" />
-        </div>
-        <div id="results-container">
-          <div class="empty-state">Load a file to see the first rows.</div>
-        </div>
+          <div id="results-container">
+            <div class="empty-state">Load a file to see the first rows.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="controls">
+          <div class="panel-heading">
+            <h2>SQL Preview</h2>
+            <div class="sql-actions">
+              <button id="copy-sql">Copy SQL</button>
+              <button id="run-query">Run Query</button>
+            </div>
+          </div>
+          <div class="sql-grid">
+            <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
+            <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
+          </div>
+        </section>
       </section>
 
-      <section class="panel" id="controls">
+      <!-- RADICAL STATS SIDEBAR -->
+      <aside class="panel" id="stats-sidebar" style="width: 280px; display: none;">
         <div class="panel-heading">
-          <h2>SQL Preview</h2>
-          <div class="sql-actions">
-            <button id="copy-sql">Copy SQL</button>
-            <button id="run-query">Run Query</button>
+          <h2>⚡ Analytics</h2>
+        </div>
+        <div id="stats-content">
+          <div class="stat-item">
+            <div class="stat-label">Total Rows</div>
+            <div class="stat-value" id="stat-total">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Visible Rows</div>
+            <div class="stat-value" id="stat-visible">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Columns</div>
+            <div class="stat-value" id="stat-columns">0</div>
+          </div>
+          <div id="column-stats"></div>
+          <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--panel-border);">
+            <div class="stat-label" style="margin-bottom: 8px;">⌨️ Shortcuts</div>
+            <div style="font-size: 11px; line-height: 1.6; color: var(--muted);">
+              <div><code>Ctrl/⌘+Enter</code> Run</div>
+              <div><code>Ctrl/⌘+L</code> Clear Search</div>
+              <div><code>Ctrl/⌘+E</code> Export CSV</div>
+              <div><code>?</code> Help</div>
+            </div>
           </div>
         </div>
-        <div class="sql-grid">
-          <textarea id="sql-input" placeholder="Type a SQL query. Example: SELECT * FROM my_data LIMIT 50;"></textarea>
-          <div class="sql-hints">Press ⌘+Enter / Ctrl+Enter to run. Changes apply instantly to the preview.</div>
-        </div>
-      </section>
+      </aside>
     </main>
   </div>
+
+  <script nonce="{{nonce}}">
+    // Theme persistence and switching
+    const themeButtons = document.querySelectorAll('.theme-btn');
+    const savedTheme = localStorage.getItem('duckdb-viewer-theme') || 'default';
+
+    function setTheme(themeName) {
+      document.body.classList.remove('theme-cyberpunk', 'theme-matrix', 'theme-hacker', 'theme-holographic');
+      if (themeName !== 'default') {
+        document.body.classList.add(`theme-${themeName}`);
+      }
+      localStorage.setItem('duckdb-viewer-theme', themeName);
+      themeButtons.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.theme === themeName);
+      });
+    }
+
+    themeButtons.forEach(btn => {
+      btn.addEventListener('click', () => setTheme(btn.dataset.theme));
+    });
+
+    // Initialize saved theme
+    setTheme(savedTheme);
+  </script>
 
   <script nonce="{{nonce}}" src="{{webview_script_uri}}"></script>
 </body>

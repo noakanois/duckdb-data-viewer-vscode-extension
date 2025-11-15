@@ -19,6 +19,11 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const statsSidebar = document.getElementById('stats-sidebar');
+const statTotal = document.getElementById('stat-total');
+const statVisible = document.getElementById('stat-visible');
+const statColumns = document.getElementById('stat-columns');
+const columnStatsContainer = document.getElementById('column-stats');
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -95,6 +100,138 @@ if (copySqlButton) {
       console.warn('[Webview] Clipboard copy failed', err);
     }
   });
+}
+
+// ===== POWER-USER KEYBOARD SHORTCUTS =====
+document.addEventListener('keydown', (event: KeyboardEvent) => {
+  // Ctrl/Cmd + L: Clear global search
+  if (event.key === 'l' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    if (globalSearchInput) {
+      globalSearchInput.value = '';
+      globalFilter = '';
+      applyTableState();
+      updateStatus('✨ Search cleared!');
+    }
+  }
+
+  // Ctrl/Cmd + E: Export to CSV
+  if (event.key === 'e' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    exportTableToCSV();
+  }
+
+  // ?: Show help
+  if (event.key === '?') {
+    event.preventDefault();
+    showHelpDialog();
+  }
+});
+
+// ===== EXPORT FUNCTIONALITY =====
+function exportTableToCSV() {
+  if (!currentTableData || currentTableData.rows.length === 0) {
+    updateStatus('⚠️ No data to export');
+    return;
+  }
+
+  const visibleRows = getVisibleRows();
+  const csv = [
+    currentTableData.columns.join(','),
+    ...visibleRows.map(row =>
+      row.display
+        .map(cell => {
+          const escaped = (cell ?? '').replace(/"/g, '""');
+          return `"${escaped}"`;
+        })
+        .join(',')
+    )
+  ].join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `duckdb-export-${Date.now()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  updateStatus(`📥 Exported ${visibleRows.length} rows to CSV`);
+}
+
+function getVisibleRows() {
+  if (!currentTableData) return [];
+  const normalizedGlobal = globalFilter.trim().toLowerCase();
+  const normalizedFilters = columnFilters.map((value) => value.trim().toLowerCase());
+
+  let visibleRows = currentTableData.rows.filter((row) => {
+    if (normalizedGlobal) {
+      const hasMatch = row.display.some((cell) => cell.toLowerCase().includes(normalizedGlobal));
+      if (!hasMatch) return false;
+    }
+    return normalizedFilters.every((filter, idx) => {
+      if (!filter) return true;
+      return (row.display[idx] ?? '').toLowerCase().includes(filter);
+    });
+  });
+
+  if (sortState.direction && sortState.columnIndex >= 0) {
+    const directionMultiplier = sortState.direction === 'asc' ? 1 : -1;
+    const sortIndex = sortState.columnIndex;
+    visibleRows = [...visibleRows].sort((a, b) => {
+      const comparison = compareValues(
+        a.raw[sortIndex],
+        b.raw[sortIndex],
+        a.display[sortIndex],
+        b.display[sortIndex]
+      );
+      return comparison * directionMultiplier;
+    });
+  }
+
+  return visibleRows;
+}
+
+function showHelpDialog() {
+  const helpText = `
+DuckDB Data Viewer - RADICAL UI REVOLUTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⌨️  KEYBOARD SHORTCUTS:
+  Ctrl/⌘+Enter  Run Query
+  Ctrl/⌘+L      Clear Search
+  Ctrl/⌘+E      Export to CSV
+  ?              Show this help
+
+🎨 THEMES:
+  Click theme buttons in top-right corner
+  Themes persist in localStorage
+
+📊 ANALYTICS:
+  View live stats in the right sidebar
+  Total, Visible, and Column stats
+
+🔍 FILTERING:
+  Global search: searches all columns
+  Column filters: per-column filtering
+  Combined filters work together
+
+💾 DATA:
+  Fully runs on your machine
+  All queries processed client-side
+  No data sent to servers
+
+🚀 FEATURES:
+  SQL query builder
+  Sort & filter any column
+  Real-time statistics
+  CSV export
+
+Made with ❤️ for data exploration!
+  `.trim();
+
+  alert(helpText);
 }
 
 // --- Core Functions ---
@@ -456,7 +593,74 @@ function updateRowCount(visible: number, total: number) {
   if (!rowCountLabel) {
     return;
   }
-  rowCountLabel.textContent = '';
+  rowCountLabel.textContent = `Showing ${visible} of ${total} rows`;
+  updateStatsSidebar(visible, total);
+}
+
+function updateStatsSidebar(visible: number, total: number) {
+  if (!statsSidebar || !currentTableData) {
+    return;
+  }
+
+  // Show the sidebar
+  statsSidebar.style.display = 'block';
+
+  // Update basic stats
+  if (statTotal) statTotal.textContent = total.toLocaleString();
+  if (statVisible) statVisible.textContent = visible.toLocaleString();
+  if (statColumns) statColumns.textContent = currentTableData.columns.length.toString();
+
+  // Update column statistics
+  if (columnStatsContainer) {
+    columnStatsContainer.innerHTML = '';
+    const stats = calculateColumnStats();
+    stats.forEach(stat => {
+      const div = document.createElement('div');
+      div.className = 'stat-item';
+      div.innerHTML = `
+        <div class="stat-label">${stat.name}</div>
+        <div style="font-size: 12px; color: var(--muted); line-height: 1.4;">
+          ${stat.type}<br/>
+          ${stat.details}
+        </div>
+      `;
+      columnStatsContainer.appendChild(div);
+    });
+  }
+}
+
+function calculateColumnStats() {
+  if (!currentTableData || currentTableData.rows.length === 0) {
+    return [];
+  }
+
+  return currentTableData.columns.slice(0, 5).map((col, idx) => {
+    const values = currentTableData!.rows.map(r => r.raw[idx]).filter(v => v != null);
+    const isNumeric = values.some(v => typeof v === 'number');
+    const isDate = values.some(v => v instanceof Date);
+
+    let details = '';
+    if (isNumeric) {
+      const nums = values.filter(v => typeof v === 'number' && Number.isFinite(v)) as number[];
+      if (nums.length > 0) {
+        const sum = nums.reduce((a, b) => a + b, 0);
+        const avg = sum / nums.length;
+        const min = Math.min(...nums);
+        const max = Math.max(...nums);
+        details = `Min: ${min.toFixed(2)}, Max: ${max.toFixed(2)}, Avg: ${avg.toFixed(2)}`;
+      }
+    } else if (isDate) {
+      details = `Date range detected`;
+    } else {
+      details = `${values.length} non-null values`;
+    }
+
+    return {
+      name: col,
+      type: isNumeric ? '🔢 Numeric' : isDate ? '📅 Date' : '📝 Text',
+      details
+    };
+  });
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
