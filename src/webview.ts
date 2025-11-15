@@ -19,8 +19,25 @@ const copySqlButton = document.getElementById('copy-sql') as HTMLButtonElement;
 const statusWrapper = document.getElementById('status-wrapper');
 const globalSearchInput = document.getElementById('global-search') as HTMLInputElement;
 const rowCountLabel = document.getElementById('row-count');
+const fileLabel = document.getElementById('file-label');
+const metricVisible = document.getElementById('metric-visible');
+const metricTotal = document.getElementById('metric-total');
+const metricColumns = document.getElementById('metric-columns');
+const metricSchema = document.getElementById('metric-schema');
+const metricSource = document.getElementById('metric-source');
+const metricRun = document.getElementById('metric-run');
+const downloadCsvButton = document.getElementById('download-csv') as HTMLButtonElement | null;
+const resetViewButton = document.getElementById('reset-view') as HTMLButtonElement | null;
+const insightsList = document.getElementById('insights-list');
+const historyContainer = document.getElementById('history-chips');
+const chartXSelect = document.getElementById('chart-x') as HTMLSelectElement | null;
+const chartYSelect = document.getElementById('chart-y') as HTMLSelectElement | null;
+const chartModeSelect = document.getElementById('chart-mode') as HTMLSelectElement | null;
+const chartCanvas = document.getElementById('chart-canvas') as HTMLCanvasElement | null;
+const chartEmptyState = document.getElementById('chart-empty');
 
 type SortDirection = 'asc' | 'desc' | null;
+type ChartMode = 'avg' | 'sum' | 'min' | 'max';
 
 interface TableRow {
   raw: any[];
@@ -30,6 +47,31 @@ interface TableRow {
 interface TableData {
   columns: string[];
   rows: TableRow[];
+}
+
+interface ColumnProfile {
+  name: string;
+  index: number;
+  sampleSize: number;
+  uniqueCount: number;
+  emptyCount: number;
+  numericCount: number;
+  numericMin: number;
+  numericMax: number;
+  numericTotal: number;
+  stringSamples: string[];
+  booleanTrue: number;
+  booleanFalse: number;
+  isNumeric: boolean;
+}
+
+interface ChartAggregate {
+  label: string;
+  sum: number;
+  count: number;
+  avg: number;
+  min: number;
+  max: number;
 }
 
 let db: duckdb.AsyncDuckDB | null = null;
@@ -42,6 +84,17 @@ let sortState: { columnIndex: number; direction: SortDirection } = { columnIndex
 let tableBodyElement: HTMLTableSectionElement | null = null;
 let copyTimeoutHandle: number | null = null;
 const DATA_LOADERS: DataLoader[] = [arrowLoader, parquetLoader, csvLoader];
+let currentFileName: string | null = null;
+let currentLoaderId: string | null = null;
+let lastVisibleRows: TableRow[] = [];
+let queryHistory: string[] = [];
+let runCount = 0;
+let chartState: { xColumn: string | null; yColumn: string | null; mode: ChartMode } = {
+  xColumn: null,
+  yColumn: null,
+  mode: 'avg',
+};
+let baseColumnProfiles: ColumnProfile[] = [];
 
 // --- Event Listeners (Moved to top) ---
 
@@ -96,6 +149,47 @@ if (copySqlButton) {
     }
   });
 }
+
+if (downloadCsvButton) {
+  downloadCsvButton.addEventListener('click', () => {
+    try {
+      downloadVisibleRows();
+    } catch (error) {
+      reportError(error);
+    }
+  });
+}
+
+if (resetViewButton) {
+  resetViewButton.addEventListener('click', () => {
+    resetViewState();
+  });
+}
+
+if (chartXSelect) {
+  chartXSelect.addEventListener('change', () => {
+    chartState.xColumn = chartXSelect.value || null;
+    renderOrbitChart();
+  });
+}
+if (chartYSelect) {
+  chartYSelect.addEventListener('change', () => {
+    chartState.yColumn = chartYSelect.value || null;
+    renderOrbitChart();
+  });
+}
+if (chartModeSelect) {
+  chartModeSelect.addEventListener('change', () => {
+    const value = chartModeSelect.value as ChartMode;
+    chartState.mode = value;
+    renderOrbitChart();
+  });
+}
+
+window.addEventListener('resize', () => {
+  // Re-render the chart when layout changes so the canvas stays crisp.
+  renderOrbitChart();
+});
 
 // --- Core Functions ---
 
@@ -181,6 +275,10 @@ async function handleFileLoad(fileName: string, fileData: any) {
   }
 
   const loader = selectLoader(fileName);
+  currentFileName = fileName;
+  currentLoaderId = loader.id;
+  updateFileLabel(fileName);
+  updateSourceMetric(loader.id);
   updateStatus(`Preparing ${loader.id.toUpperCase()} data for ${fileName}…`);
   const loadResult = await loader.load(fileName, fileBytes, {
     db,
@@ -191,9 +289,14 @@ async function handleFileLoad(fileName: string, fileData: any) {
   const defaultQuery = buildDefaultQuery(loadResult.columns, loadResult.relationIdentifier);
   sqlInput.value = defaultQuery;
   sqlInput.placeholder = `Example: ${defaultQuery}`;
+  updateSchemaMetric(loadResult.columns);
 
-  if (controls) controls.style.display = 'flex';
-  if (resultsContainer) resultsContainer.style.display = 'block';
+  if (controls) {
+    controls.style.display = 'flex';
+  }
+  if (resultsContainer) {
+    resultsContainer.style.display = 'block';
+  }
 
   await runQuery(defaultQuery);
 }
@@ -233,7 +336,10 @@ async function runQuery(sql: string) {
   try {
     const result = await connection.query(sql);
     renderResults(result);
-    
+    addQueryToHistory(sql);
+    runCount += 1;
+    updateRunMetric();
+
     // --- CHANGE ---
     // Hide the status bar on success
     if (statusWrapper) {
@@ -258,6 +364,10 @@ function renderResults(table: Table | null) {
     currentTableData = null;
     tableBodyElement = null;
     updateRowCount(0, 0);
+    lastVisibleRows = [];
+    updateInsights([]);
+    clearOrbitControls();
+    renderOrbitChart();
     return;
   }
 
@@ -266,7 +376,9 @@ function renderResults(table: Table | null) {
 
   for (let i = 0; i < table.numRows; i++) {
     const row = table.get(i);
-    if (!row) continue;
+    if (!row) {
+      continue;
+    }
 
     const raw: any[] = [];
     const display: string[] = [];
@@ -286,7 +398,9 @@ function renderResults(table: Table | null) {
     globalSearchInput.value = '';
   }
 
+  updateSchemaMetric(columns);
   buildTableSkeleton(columns);
+  populateOrbitControls();
   applyTableState();
 
   resultsContainer.style.display = 'block';
@@ -366,7 +480,9 @@ function applyTableState() {
       }
     }
     return normalizedFilters.every((filter, idx) => {
-      if (!filter) return true;
+      if (!filter) {
+        return true;
+      }
       return (row.display[idx] ?? '').toLowerCase().includes(filter);
     });
   });
@@ -409,8 +525,11 @@ function applyTableState() {
     });
   }
 
+  lastVisibleRows = visibleRows;
   updateRowCount(visibleRows.length, currentTableData.rows.length);
   refreshSortIndicators();
+  updateInsights(visibleRows);
+  renderOrbitChart();
 }
 
 function syncColumnHeaderHeight(headerRow: HTMLTableRowElement) {
@@ -453,14 +572,25 @@ function refreshSortIndicators() {
 }
 
 function updateRowCount(visible: number, total: number) {
-  if (!rowCountLabel) {
-    return;
+  if (rowCountLabel) {
+    if (total === 0) {
+      rowCountLabel.textContent = 'No rows to display yet.';
+    } else {
+      rowCountLabel.textContent = `Showing ${formatNumber(visible)} of ${formatNumber(total)} rows`;
+    }
   }
-  rowCountLabel.textContent = '';
+  if (metricVisible) {
+    metricVisible.textContent = formatNumber(visible);
+  }
+  if (metricTotal) {
+    metricTotal.textContent = `of ${formatNumber(total)} total rows`;
+  }
 }
 
 function compareValues(a: any, b: any, aDisplay: string, bDisplay: string): number {
-  if (a === b) return 0;
+  if (a === b) {
+    return 0;
+  }
 
   const aIsNumber = typeof a === 'number' && Number.isFinite(a);
   const bIsNumber = typeof b === 'number' && Number.isFinite(b);
@@ -497,6 +627,590 @@ function formatCell(value: any): string {
     }
   }
   return String(value);
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
+}
+
+function updateFileLabel(fileName: string | null) {
+  if (!fileLabel) {
+    return;
+  }
+  if (!fileName) {
+    fileLabel.textContent = 'Load a file or run a query to begin the adventure.';
+    return;
+  }
+  fileLabel.textContent = `Currently orbiting: ${fileName}`;
+}
+
+function updateSourceMetric(loaderId: string | null) {
+  if (!metricSource) {
+    return;
+  }
+  if (!loaderId) {
+    metricSource.textContent = '—';
+    return;
+  }
+  metricSource.textContent = loaderId.toUpperCase();
+}
+
+function updateSchemaMetric(columns: string[]) {
+  if (!metricColumns || !metricSchema) {
+    return;
+  }
+  metricColumns.textContent = formatNumber(columns.length);
+  if (columns.length === 0) {
+    metricSchema.textContent = 'Awaiting schema…';
+  } else {
+    const preview = columns.slice(0, 3).join(', ');
+    metricSchema.textContent = columns.length > 3 ? `${preview}, …` : preview;
+  }
+}
+
+function updateRunMetric() {
+  if (!metricRun) {
+    return;
+  }
+  if (runCount <= 0) {
+    metricRun.textContent = 'No queries yet';
+  } else {
+    const timestamp = new Date();
+    metricRun.textContent = `Run #${runCount} @ ${timestamp.toLocaleTimeString()}`;
+  }
+}
+
+function addQueryToHistory(sql: string) {
+  const normalized = sql.trim();
+  if (!normalized) {
+    return;
+  }
+  queryHistory = [normalized, ...queryHistory.filter((entry) => entry !== normalized)];
+  if (queryHistory.length > 10) {
+    queryHistory = queryHistory.slice(0, 10);
+  }
+  renderQueryHistory();
+}
+
+function renderQueryHistory() {
+  if (!historyContainer) {
+    return;
+  }
+  historyContainer.innerHTML = '';
+  if (queryHistory.length === 0) {
+    historyContainer.classList.add('history-empty');
+    historyContainer.textContent = 'No queries yet. Launch one!';
+    return;
+  }
+  historyContainer.classList.remove('history-empty');
+  const fragment = document.createDocumentFragment();
+  queryHistory.forEach((query) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'history-chip';
+    button.textContent = query.length > 120 ? `${query.slice(0, 117)}…` : query;
+    button.title = query;
+    button.addEventListener('click', () => {
+      sqlInput.value = query;
+      runQuery(query).catch(reportError);
+    });
+    fragment.appendChild(button);
+  });
+  historyContainer.appendChild(fragment);
+}
+
+function resetViewState() {
+  if (!currentTableData) {
+    updateStatus('No data yet. Load a file to explore.');
+    return;
+  }
+  columnFilters = currentTableData.columns.map(() => '');
+  globalFilter = '';
+  sortState = { columnIndex: -1, direction: null };
+  if (globalSearchInput) {
+    globalSearchInput.value = '';
+  }
+  const filterInputs = resultsContainer?.querySelectorAll<HTMLInputElement>('.filter-row input');
+  filterInputs?.forEach((input) => {
+    input.value = '';
+  });
+  applyTableState();
+  updateStatus('View reset. Showing cosmic default ordering.');
+}
+
+function downloadVisibleRows() {
+  if (!currentTableData) {
+    updateStatus('No data to export yet. Run a query first.');
+    return;
+  }
+  const rows = lastVisibleRows.length > 0 ? lastVisibleRows : currentTableData.rows;
+  if (rows.length === 0) {
+    updateStatus('There are no rows in the current preview to download.');
+    return;
+  }
+  const header = currentTableData.columns.map(escapeCsvValue).join(',');
+  const body = rows
+    .map((row) => row.display.map(escapeCsvValue).join(','))
+    .join('\n');
+  const csvContent = `${header}\n${body}`;
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const safeName = (currentFileName ?? 'duckdb_preview').replace(/[^a-z0-9-_]/gi, '_');
+  link.download = `${safeName}_preview.csv`;
+  link.href = url;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  updateStatus(`Downloaded ${formatNumber(rows.length)} rows as CSV preview.`);
+}
+
+function escapeCsvValue(value: string): string {
+  const safeValue = value ?? '';
+  if (/[",\n]/.test(safeValue)) {
+    return `"${safeValue.replace(/"/g, '""')}"`;
+  }
+  return safeValue;
+}
+
+function populateOrbitControls() {
+  if (!chartXSelect || !chartYSelect) {
+    return;
+  }
+  if (!currentTableData) {
+    clearOrbitControls();
+    return;
+  }
+  baseColumnProfiles = computeColumnProfiles(currentTableData.rows, currentTableData.columns);
+  const categorical = baseColumnProfiles.filter((profile) => !profile.isNumeric);
+  const numeric = baseColumnProfiles.filter((profile) => profile.isNumeric);
+
+  setSelectOptions(chartXSelect, categorical.length > 0 ? categorical : baseColumnProfiles);
+  setSelectOptions(chartYSelect, numeric.length > 0 ? numeric : baseColumnProfiles);
+
+  if (chartState.xColumn && !baseColumnProfiles.some((profile) => profile.name === chartState.xColumn)) {
+    chartState.xColumn = null;
+  }
+  if (chartState.yColumn && !baseColumnProfiles.some((profile) => profile.name === chartState.yColumn)) {
+    chartState.yColumn = null;
+  }
+  if (!chartState.xColumn && chartXSelect.options.length > 0) {
+    chartState.xColumn = chartXSelect.options[0].value;
+  }
+  if (!chartState.yColumn && chartYSelect.options.length > 0) {
+    chartState.yColumn = chartYSelect.options[0].value;
+  }
+
+  if (chartState.xColumn) {
+    chartXSelect.value = chartState.xColumn;
+  }
+  if (chartState.yColumn) {
+    chartYSelect.value = chartState.yColumn;
+  }
+
+  renderOrbitChart();
+}
+
+function setSelectOptions(select: HTMLSelectElement, profiles: ColumnProfile[]) {
+  select.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  profiles.forEach((profile) => {
+    const option = document.createElement('option');
+    option.value = profile.name;
+    option.textContent = profile.name;
+    fragment.appendChild(option);
+  });
+  if (profiles.length === 0) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No columns';
+    fragment.appendChild(option);
+  }
+  select.appendChild(fragment);
+  select.disabled = profiles.length === 0;
+}
+
+function clearOrbitControls() {
+  if (chartXSelect) {
+    chartXSelect.innerHTML = '';
+    chartXSelect.disabled = true;
+  }
+  if (chartYSelect) {
+    chartYSelect.innerHTML = '';
+    chartYSelect.disabled = true;
+  }
+  chartState.xColumn = null;
+  chartState.yColumn = null;
+  baseColumnProfiles = [];
+  if (chartCanvas) {
+    const ctx = chartCanvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+    }
+  }
+  if (chartEmptyState) {
+    chartEmptyState.hidden = false;
+  }
+}
+
+function renderOrbitChart() {
+  if (!chartCanvas || !chartEmptyState) {
+    return;
+  }
+  if (!currentTableData || !chartState.xColumn || !chartState.yColumn) {
+    chartEmptyState.hidden = false;
+    const ctx = chartCanvas.getContext('2d');
+    ctx?.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+    return;
+  }
+
+  const xIndex = currentTableData.columns.indexOf(chartState.xColumn);
+  const yIndex = currentTableData.columns.indexOf(chartState.yColumn);
+  if (xIndex === -1 || yIndex === -1) {
+    chartEmptyState.hidden = false;
+    return;
+  }
+
+  const aggregated = collectChartData(xIndex, yIndex);
+  if (aggregated.length === 0) {
+    chartEmptyState.hidden = false;
+    const ctx = chartCanvas.getContext('2d');
+    ctx?.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+    return;
+  }
+
+  const processed = aggregated
+    .map((entry) => {
+      let value = entry.avg;
+      switch (chartState.mode) {
+        case 'sum':
+          value = entry.sum;
+          break;
+        case 'min':
+          value = entry.min;
+          break;
+        case 'max':
+          value = entry.max;
+          break;
+        default:
+          value = entry.avg;
+      }
+      return { ...entry, value };
+    })
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 12);
+
+  if (processed.length === 0) {
+    chartEmptyState.hidden = false;
+    const ctx = chartCanvas.getContext('2d');
+    ctx?.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+    return;
+  }
+
+  chartEmptyState.hidden = true;
+  const ctx = chartCanvas.getContext('2d');
+  if (!ctx) {
+    return;
+  }
+
+  const ratio = window.devicePixelRatio || 1;
+  const width = chartCanvas.clientWidth * ratio;
+  const height = chartCanvas.clientHeight * ratio;
+  if (chartCanvas.width !== width || chartCanvas.height !== height) {
+    chartCanvas.width = width;
+    chartCanvas.height = height;
+  }
+
+  ctx.save();
+  ctx.scale(ratio, ratio);
+  ctx.clearRect(0, 0, chartCanvas.clientWidth, chartCanvas.clientHeight);
+
+  const padding = 40;
+  const availableWidth = Math.max(10, chartCanvas.clientWidth - padding * 2);
+  const availableHeight = Math.max(10, chartCanvas.clientHeight - padding * 2);
+
+  const values = processed.map((entry) => entry.value);
+  const minValue = Math.min(0, ...values);
+  const maxValue = Math.max(0, ...values);
+  const range = maxValue - minValue || 1;
+  const zeroLine = padding + ((maxValue - 0) / range) * availableHeight;
+
+  const gradient = ctx.createLinearGradient(0, 0, chartCanvas.clientWidth, chartCanvas.clientHeight);
+  gradient.addColorStop(0, 'rgba(99, 102, 241, 0.35)');
+  gradient.addColorStop(1, 'rgba(236, 72, 153, 0.35)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, chartCanvas.clientWidth, chartCanvas.clientHeight);
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding, padding);
+  ctx.lineTo(padding, padding + availableHeight);
+  ctx.lineTo(padding + availableWidth, padding + availableHeight);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.beginPath();
+  ctx.moveTo(padding, zeroLine);
+  ctx.lineTo(padding + availableWidth, zeroLine);
+  ctx.stroke();
+
+  const slotWidth = availableWidth / processed.length;
+  const barWidth = Math.min(60, slotWidth * 0.7);
+
+  processed.forEach((entry, index) => {
+    const x = padding + index * slotWidth + (slotWidth - barWidth) / 2;
+    const valueY = padding + ((maxValue - entry.value) / range) * availableHeight;
+    const barTop = Math.min(valueY, zeroLine);
+    const barBottom = Math.max(valueY, zeroLine);
+    const barHeight = Math.max(4, barBottom - barTop);
+
+    const hue = 220 + (index / Math.max(1, processed.length - 1)) * 120;
+    const baseColor = `hsla(${hue}, 85%, 62%, 0.85)`;
+    ctx.fillStyle = baseColor;
+    drawRoundedRect(ctx, x, barTop, barWidth, barHeight, 8);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.font = '12px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    const valueLabelY = entry.value >= 0 ? barTop - 6 : barBottom + 14;
+    ctx.fillText(formatNumber(entry.value), x + barWidth / 2, valueLabelY);
+
+    ctx.save();
+    ctx.translate(x + barWidth / 2, padding + availableHeight + 16);
+    ctx.rotate(-Math.PI / 8);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.fillText(truncateLabel(entry.label, 18), 0, 0);
+    ctx.restore();
+  });
+
+  ctx.restore();
+}
+
+function collectChartData(xIndex: number, yIndex: number): ChartAggregate[] {
+  if (!currentTableData) {
+    return [];
+  }
+  const rows = (lastVisibleRows.length > 0 ? lastVisibleRows : currentTableData.rows).slice(0, 1500);
+  const buckets = new Map<string, { sum: number; count: number; min: number; max: number }>();
+  rows.forEach((row) => {
+    const labelRaw = row.display[xIndex] ?? '';
+    const label = labelRaw.trim() === '' ? '(blank)' : labelRaw;
+    const rawValue = row.raw[yIndex];
+    const numericValue = typeof rawValue === 'number' ? rawValue : Number(rawValue);
+    if (!Number.isFinite(numericValue)) {
+      return;
+    }
+    const bucket = buckets.get(label) ?? {
+      sum: 0,
+      count: 0,
+      min: Number.POSITIVE_INFINITY,
+      max: Number.NEGATIVE_INFINITY,
+    };
+    bucket.sum += numericValue;
+    bucket.count += 1;
+    bucket.min = Math.min(bucket.min, numericValue);
+    bucket.max = Math.max(bucket.max, numericValue);
+    buckets.set(label, bucket);
+  });
+  return Array.from(buckets.entries())
+    .map(([label, bucket]) => ({
+      label,
+      sum: bucket.sum,
+      count: bucket.count,
+      avg: bucket.count > 0 ? bucket.sum / bucket.count : 0,
+      min: bucket.min === Number.POSITIVE_INFINITY ? 0 : bucket.min,
+      max: bucket.max === Number.NEGATIVE_INFINITY ? 0 : bucket.max,
+    }))
+    .filter((entry) => entry.count > 0);
+}
+
+function updateInsights(visibleRows: TableRow[]) {
+  if (!insightsList) {
+    return;
+  }
+  insightsList.innerHTML = '';
+  if (!currentTableData) {
+    insightsList.appendChild(createInsightText('🦆 Load a file to generate insights.'));
+    return;
+  }
+
+  if (visibleRows.length === 0 && currentTableData.rows.length > 0) {
+    insightsList.appendChild(
+      createInsightText('🪐 Filters active: no rows match the current constellation. Try resetting the view.')
+    );
+  }
+
+  const rowsForAnalysis = visibleRows.length > 0 ? visibleRows : currentTableData.rows;
+  if (rowsForAnalysis.length === 0) {
+    insightsList.appendChild(createInsightText('🛰️ Awaiting data. Run a query to illuminate the grid.'));
+    return;
+  }
+
+  const profiles = computeColumnProfiles(rowsForAnalysis, currentTableData.columns);
+  if (profiles.length === 0) {
+    insightsList.appendChild(createInsightText('🚀 Data ready, but we could not extract column profiles yet.'));
+    return;
+  }
+
+  insightsList.appendChild(
+    createInsightText(
+      `🧮 Galactic preview: ${formatNumber(rowsForAnalysis.length)} rows × ${formatNumber(
+        currentTableData.columns.length
+      )} columns in view.`
+    )
+  );
+
+  const mostUnique = profiles.reduce((prev, curr) => (curr.uniqueCount > prev.uniqueCount ? curr : prev), profiles[0]);
+  if (mostUnique) {
+    insightsList.appendChild(
+      createInsightText(
+        `🎯 Most diverse column “${mostUnique.name}” exposes ${formatNumber(mostUnique.uniqueCount)} unique values.`
+      )
+    );
+  }
+
+  const numericProfiles = profiles.filter((profile) => profile.isNumeric && profile.numericCount > 0);
+  if (numericProfiles.length > 0) {
+    const widest = numericProfiles.reduce((prev, curr) => {
+      const prevSpread = prev.numericMax - prev.numericMin;
+      const currSpread = curr.numericMax - curr.numericMin;
+      return currSpread > prevSpread ? curr : prev;
+    }, numericProfiles[0]);
+    const average = widest.numericCount > 0 ? widest.numericTotal / widest.numericCount : 0;
+    insightsList.appendChild(
+      createInsightText(
+        `📈 Numeric rocket “${widest.name}” ranges ${formatNumber(widest.numericMin)} → ${formatNumber(
+          widest.numericMax
+        )} (avg ${formatNumber(average)}).`
+      )
+    );
+  }
+
+  const nullHeavy = profiles.reduce((prev, curr) => (curr.emptyCount > prev.emptyCount ? curr : prev), profiles[0]);
+  if (nullHeavy && nullHeavy.emptyCount > 0) {
+    const ratio = rowsForAnalysis.length > 0 ? (nullHeavy.emptyCount / rowsForAnalysis.length) * 100 : 0;
+    insightsList.appendChild(
+      createInsightText(
+        `🪄 Missing data alert: “${nullHeavy.name}” has ${formatNumber(nullHeavy.emptyCount)} blanks (~${ratio.toFixed(
+          1
+        )}%).`
+      )
+    );
+  }
+}
+
+function computeColumnProfiles(rows: TableRow[], columns: string[]): ColumnProfile[] {
+  const limit = Math.min(rows.length, 1500);
+  const uniqueTrackers = columns.map(() => new Set<string>());
+  const stringSamples = columns.map(() => new Set<string>());
+  const emptyCounts = columns.map(() => 0);
+  const numericCounts = columns.map(() => 0);
+  const numericTotals = columns.map(() => 0);
+  const numericMins = columns.map(() => Number.POSITIVE_INFINITY);
+  const numericMaxs = columns.map(() => Number.NEGATIVE_INFINITY);
+  const booleanTrue = columns.map(() => 0);
+  const booleanFalse = columns.map(() => 0);
+
+  for (let rowIndex = 0; rowIndex < limit; rowIndex++) {
+    const row = rows[rowIndex];
+    columns.forEach((_, columnIndex) => {
+      const displayValue = row.display[columnIndex] ?? '';
+      const rawValue = row.raw[columnIndex];
+
+      if (displayValue === '' || displayValue === null) {
+        emptyCounts[columnIndex] += 1;
+      }
+      if (uniqueTrackers[columnIndex].size < 512) {
+        uniqueTrackers[columnIndex].add(displayValue);
+      }
+      if (displayValue && stringSamples[columnIndex].size < 4) {
+        stringSamples[columnIndex].add(displayValue);
+      }
+
+      if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+        numericCounts[columnIndex] += 1;
+        numericTotals[columnIndex] += rawValue;
+        numericMins[columnIndex] = Math.min(numericMins[columnIndex], rawValue);
+        numericMaxs[columnIndex] = Math.max(numericMaxs[columnIndex], rawValue);
+        return;
+      }
+      if (typeof rawValue === 'boolean') {
+        if (rawValue) {
+          booleanTrue[columnIndex] += 1;
+        } else {
+          booleanFalse[columnIndex] += 1;
+        }
+        return;
+      }
+      if (rawValue instanceof Date) {
+        const numericTime = rawValue.getTime();
+        numericCounts[columnIndex] += 1;
+        numericTotals[columnIndex] += numericTime;
+        numericMins[columnIndex] = Math.min(numericMins[columnIndex], numericTime);
+        numericMaxs[columnIndex] = Math.max(numericMaxs[columnIndex], numericTime);
+      }
+    });
+  }
+
+  return columns.map((name, index) => {
+    const sampleSize = limit;
+    const numericCount = numericCounts[index];
+    const isNumeric = numericCount >= Math.max(3, Math.floor(sampleSize * 0.5));
+    return {
+      name,
+      index,
+      sampleSize,
+      uniqueCount: uniqueTrackers[index].size,
+      emptyCount: emptyCounts[index],
+      numericCount,
+      numericMin: numericCount > 0 && numericMins[index] !== Number.POSITIVE_INFINITY ? numericMins[index] : 0,
+      numericMax: numericCount > 0 && numericMaxs[index] !== Number.NEGATIVE_INFINITY ? numericMaxs[index] : 0,
+      numericTotal: numericTotals[index],
+      stringSamples: Array.from(stringSamples[index]),
+      booleanTrue: booleanTrue[index],
+      booleanFalse: booleanFalse[index],
+      isNumeric,
+    };
+  });
+}
+
+function createInsightText(text: string) {
+  const item = document.createElement('li');
+  item.className = 'insight-card';
+  item.textContent = text;
+  return item;
+}
+
+function truncateLabel(label: string, maxLength: number) {
+  if (label.length <= maxLength) {
+    return label;
+  }
+  return `${label.slice(0, maxLength - 1)}…`;
+}
+
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+  const r = Math.max(0, Math.min(radius, Math.abs(width) / 2, Math.abs(height) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
 // ---
@@ -543,5 +1257,10 @@ function reportError(e: any) {
 }
 
 // Send the 'ready' signal to the extension to start the handshake
+updateFileLabel(null);
+updateSourceMetric(null);
+updateSchemaMetric([]);
+updateRunMetric();
+updateRowCount(0, 0);
 updateStatus('Webview loaded. Sending "ready" to extension.');
 vscode.postMessage({ command: 'ready' });
